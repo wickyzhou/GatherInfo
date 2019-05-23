@@ -155,13 +155,14 @@ namespace 控制台程序获取数据
 
         }
 
-        public static int WriteLog(int classId,int sourceId,int seqNo, int pageNo,bool isRegMatch, bool isException, string responseMsg,string regPattern,string gatherBT,string gatherET,int gatherRows)
+        public static int WriteLog(int classId,int sourceId,int seqNo, string keyword, int pageNo,bool isRegMatch, bool isException, string responseMsg,string regPattern,string gatherBT,string gatherET,int gatherRows)
         {
-            string _sql = @" insert into t_gather_list_logs(class_id,source_id,seq_no,page_no,is_reg_match,is_exception,response,reg_pattern,gather_bt,gather_et,gather_rows)  values ("
+            keyword = seqNo == 0 ? keyword : seqNo.ToString() + "-" + keyword;
+            string _sql = @" insert into t_gather_list_logs(class_id,source_id,keyword,page_no,is_reg_match,is_exception,response,reg_pattern,gather_bt,gather_et,gather_rows)  values ("
                 + classId.ToString()+ ","
                 + sourceId.ToString()+","
-                + seqNo.ToString() + ","
-                + pageNo.ToString() + ","
+                + "'" +keyword+ "',"
+               + pageNo.ToString() + ","
                 + "'" + isRegMatch + "',"
                 + "'" + isException + "',"
                 + "'" + responseMsg.Replace("'","''") + "',"

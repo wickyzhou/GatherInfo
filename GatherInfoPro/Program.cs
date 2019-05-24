@@ -167,8 +167,8 @@ namespace 控制台程序获取数据
                     //不是通用的采集网址，先首页采集
                     if (!_isgenericgatherurl)
                     {
-                        Console.WriteLine("source_id: " + _sourceid.ToString() + "\t\t pages:-1"  + "\t\t 关键字:" + _seqno.ToString() + " - " + UrlDecode(_keyword));
-                        getListOnly(dt, _class, _opcid, _wdid, _sourceid,_seqno, _keyword, _sourceurl, _listispost, _listcharset, _listpattern, _firstpage - 1, _infourl, _urlpattern, _listbegin, _listend);
+                        Console.WriteLine("source_id: " + _sourceid.ToString() + "\t\t pages:-1" + "\t\t 关键字:" + _seqno.ToString() + " - " + UrlDecode(_keyword));
+                        getListOnly(dt, _class, _opcid, _wdid, _sourceid, _seqno, _keyword, _sourceurl, _listispost, _listcharset, _listpattern, _firstpage - 1, _infourl, _urlpattern, _listbegin, _listend);
                     }
 
 
@@ -186,7 +186,7 @@ namespace 控制台程序获取数据
 
                         for (int m = _firstpage; m < _firstpage + _gatherpages; m += _firstpageratio)
                         {
-                            Console.WriteLine("source_id: " + _sourceid.ToString() + "\t\t pages:" + m.ToString() + "\t\t 关键字:" + _seqno.ToString()+" - "+ UrlDecode(_keyword));
+                            Console.WriteLine("source_id: " + _sourceid.ToString() + "\t\t pages:" + m.ToString() + "\t\t 关键字:" + _seqno.ToString() + " - " + UrlDecode(_keyword));
                             getListOnly(dt, _class, _opcid, _wdid, _sourceid, _seqno, _keyword, _url.Replace("$pageno", m.ToString()), _listispost, _listcharset, _listpattern, m, _infourl, _urlpattern, _listbegin, _listend);
                         }
 
@@ -440,9 +440,9 @@ namespace 控制台程序获取数据
         /// <param name="listbegin"></param>
         /// <param name="listend"></param>
         /// <returns></returns>
-        private static DataTable getListOnly(DataTable dt, int classid, int opcid, int wdid, int sourceid,int seq, string keyword, string url, bool ispost, string charset, string pattern, int pageno, string infourl, string urlpattern, string listbegin, string listend)
+        private static DataTable getListOnly(DataTable dt, int classid, int opcid, int wdid, int sourceid, int seq, string keyword, string url, bool ispost, string charset, string pattern, int pageno, string infourl, string urlpattern, string listbegin, string listend)
         {
-                            
+
             #region 1.采集过程
 
             //采集开始时间
@@ -500,7 +500,7 @@ namespace 控制台程序获取数据
                                 dr[j - 1] = gc[j];
                             }
                             //清理标题格式
-                                dr["info_title"] = DealWithTitle(dr["info_title"].ToString());
+                            dr["info_title"] = DealWithTitle(dr["info_title"].ToString());
 
 
 
@@ -544,11 +544,11 @@ namespace 控制台程序获取数据
 
             #region 3.将采集日志写入到数据库表
             int cnt = 1;
-            int ok = DAL.WriteLog(classid, sourceid,seq, UrlDecode(keyword), pageno, isRegMatch, isException, response, pattern, gatherBT, gatherET, gatherRows);
+            int ok = DAL.WriteLog(classid, sourceid, seq, UrlDecode(keyword), pageno, isRegMatch, isException, response, pattern, gatherBT, gatherET, gatherRows);
             while (ok != 1 && cnt < 3)
             {
                 Console.WriteLine($" 第{cnt}次 重试写入采集日志表...");
-                ok = DAL.WriteLog(classid, sourceid,seq, UrlDecode(keyword), pageno, isRegMatch, isException, response, pattern, gatherBT, gatherET, gatherRows);
+                ok = DAL.WriteLog(classid, sourceid, seq, UrlDecode(keyword), pageno, isRegMatch, isException, response, pattern, gatherBT, gatherET, gatherRows);
                 cnt++;
             }
             #endregion
@@ -699,7 +699,7 @@ namespace 控制台程序获取数据
         public static string DealWithPublishDate(string publishDate, string url)
         {
             //清空发布日期中的标签
-            string _publishDate = Regex.Replace(Regex.Replace(publishDate, "<a.*?</a>", ""),"<.*?>", "").Replace("年","-").Replace("月", "-").Replace("日", "");
+            string _publishDate = Regex.Replace(Regex.Replace(publishDate, "<a.*?</a>", ""), "<.*?>", "").Replace("年", "-").Replace("月", "-").Replace("日", "");
             DateTime _result;
             if (_publishDate.Length == 0) //如果为空，则设置为明天
             {
@@ -708,6 +708,11 @@ namespace 控制台程序获取数据
             else if (DateTime.TryParse(_publishDate, out _result)) //可以转换为时间
             {
                 return _result.ToString("yyyy-MM-dd");
+            }
+            else if (Int64.TryParse(_publishDate, out _)) //整数时间戳的情况下，转换为符合日期的字符串
+            {
+                return ConvertStringToDateTime(_publishDate).ToString("yyyy-MM-dd HH:mm:ss");
+
             }
             else
             {
@@ -920,7 +925,15 @@ namespace 控制台程序获取数据
         public static string UrlDecode(string keyword)
         {
             return HttpUtility.UrlDecode(keyword);
-         
+
+        }
+
+        private static DateTime ConvertStringToDateTime(string timeStamp)
+        {
+            DateTime dtStart = TimeZone.CurrentTimeZone.ToLocalTime(new DateTime(1970, 1, 1));
+            long lTime = long.Parse(Regex.Replace(timeStamp, @"\s", "") + "0000");
+            TimeSpan toNow = new TimeSpan(lTime);
+            return dtStart.Add(toNow);
         }
     }
 }

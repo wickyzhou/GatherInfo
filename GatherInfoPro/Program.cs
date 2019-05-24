@@ -112,7 +112,7 @@ namespace 控制台程序获取数据
                 string param_residual = ds.Tables[0].Rows[j]["param_residual"].ToString() == "-" ? "" : ds.Tables[0].Rows[j]["param_residual"].ToString(); ;//列表固定后缀参数
 
                 //以下两列是关键字采集源列表
-                string _keyword = ds.Tables[0].Columns.Contains("keyword") ? ds.Tables[0].Rows[j]["keyword"].ToString() : "";
+                string _keyword = ds.Tables[0].Columns.Contains("keyword") ? UrlEncode(ds.Tables[0].Rows[j]["keyword"].ToString()) : "";
                 int _seqno = ds.Tables[0].Columns.Contains("seq_no") ? int.Parse(ds.Tables[0].Rows[j]["seq_no"].ToString()) : 0;
 
                 string _url = _gatherurl.Replace("$param1", getTranslationStringDate(listp1)).Replace("$param2", getTranslationStringDate(listp2)).Replace("$kw", _keyword);//动态参数格式
@@ -167,7 +167,7 @@ namespace 控制台程序获取数据
                     //不是通用的采集网址，先首页采集
                     if (!_isgenericgatherurl)
                     {
-                        Console.WriteLine("source_id: " + _sourceid.ToString() + "\t\t pages:-1"  + "\t\t 关键字:" + _seqno.ToString() + " - " + _keyword);
+                        Console.WriteLine("source_id: " + _sourceid.ToString() + "\t\t pages:-1"  + "\t\t 关键字:" + _seqno.ToString() + " - " + UrlDecode(_keyword));
                         getListOnly(dt, _class, _opcid, _wdid, _sourceid,_seqno, _keyword, _sourceurl, _listispost, _listcharset, _listpattern, _firstpage - 1, _infourl, _urlpattern, _listbegin, _listend);
                     }
 
@@ -176,7 +176,7 @@ namespace 控制台程序获取数据
                     {
                         for (int m = _firstpage; m <= _totalpages; m++)
                         {
-                            Console.WriteLine("source_id: " + _sourceid.ToString() + "\t\t pages:" + m.ToString() + "\t\t 关键字:" + _seqno.ToString() + " - " + _keyword);
+                            Console.WriteLine("source_id: " + _sourceid.ToString() + "\t\t pages:" + m.ToString() + "\t\t 关键字:" + _seqno.ToString() + " - " + UrlDecode(_keyword));
                             getListOnly(dt, _class, _opcid, _wdid, _sourceid, _seqno, _keyword, _url.Replace("$pageno", _firstpage.ToString()), _listispost, _listcharset, _listpattern, m, _infourl, _urlpattern, _listbegin, _listend);
                         }
 
@@ -186,7 +186,7 @@ namespace 控制台程序获取数据
 
                         for (int m = _firstpage; m < _firstpage + _gatherpages; m += _firstpageratio)
                         {
-                            Console.WriteLine("source_id: " + _sourceid.ToString() + "\t\t pages:" + m.ToString() + "\t\t 关键字:" + _seqno.ToString()+" - "+ _keyword);
+                            Console.WriteLine("source_id: " + _sourceid.ToString() + "\t\t pages:" + m.ToString() + "\t\t 关键字:" + _seqno.ToString()+" - "+ UrlDecode(_keyword));
                             getListOnly(dt, _class, _opcid, _wdid, _sourceid, _seqno, _keyword, _url.Replace("$pageno", m.ToString()), _listispost, _listcharset, _listpattern, m, _infourl, _urlpattern, _listbegin, _listend);
                         }
 
@@ -521,7 +521,7 @@ namespace 控制台程序获取数据
                             dr["class"] = classid.ToString();
                             dr["opc_id"] = opcid.ToString();
                             dr["wd_id"] = wdid.ToString();
-                            dr["keyword"] = keyword;
+                            dr["keyword"] = UrlDecode(keyword);
                             dr["seq_no"] = seq.ToString();
                             dt.Rows.Add(dr);
                         }
@@ -544,11 +544,11 @@ namespace 控制台程序获取数据
 
             #region 3.将采集日志写入到数据库表
             int cnt = 1;
-            int ok = DAL.WriteLog(classid, sourceid,seq, keyword, pageno, isRegMatch, isException, response, pattern, gatherBT, gatherET, gatherRows);
+            int ok = DAL.WriteLog(classid, sourceid,seq, UrlDecode(keyword), pageno, isRegMatch, isException, response, pattern, gatherBT, gatherET, gatherRows);
             while (ok != 1 && cnt < 3)
             {
                 Console.WriteLine($" 第{cnt}次 重试写入采集日志表...");
-                ok = DAL.WriteLog(classid, sourceid,seq, keyword ,pageno, isRegMatch, isException, response, pattern, gatherBT, gatherET, gatherRows);
+                ok = DAL.WriteLog(classid, sourceid,seq, UrlDecode(keyword), pageno, isRegMatch, isException, response, pattern, gatherBT, gatherET, gatherRows);
                 cnt++;
             }
             #endregion
@@ -699,7 +699,7 @@ namespace 控制台程序获取数据
         public static string DealWithPublishDate(string publishDate, string url)
         {
             //清空发布日期中的标签
-            string _publishDate = Regex.Replace(publishDate, "<.*?>", "");
+            string _publishDate = Regex.Replace(Regex.Replace(publishDate, "<a.*?</a>", ""),"<.*?>", "").Replace("年","-").Replace("月", "-").Replace("日", "");
             DateTime _result;
             if (_publishDate.Length == 0) //如果为空，则设置为明天
             {
@@ -901,5 +901,26 @@ namespace 控制台程序获取数据
             return queryString;
         }
 
+
+        /// <summary>
+        /// 中文转百分号格式
+        /// </summary>
+        /// <param name="keyword"></param>
+        /// <returns></returns>
+        public static string UrlEncode(string keyword)
+        {
+            return HttpUtility.UrlEncode(keyword);
+        }
+
+        /// <summary>
+        /// 百分号格式转中文
+        /// </summary>
+        /// <param name="keyword"></param>
+        /// <returns></returns>
+        public static string UrlDecode(string keyword)
+        {
+            return HttpUtility.UrlDecode(keyword);
+         
+        }
     }
 }

@@ -11,9 +11,9 @@ namespace 控制台程序获取数据
     public static class DAL
     {
         //static string constr= "data source=(local); initial catalog=Idata; Integrated Security =SSPI";
-        static string constr = ConfigurationManager.ConnectionStrings["Idata"].ToString();
+        static readonly string constr = ConfigurationManager.ConnectionStrings["Idata"].ToString();
 
-        public static bool execProcedureWithInputParameters(string procedurename,string paramsname, string paramsval)
+        public static bool ExecProcedureWithInputParameters(string procedurename,string paramsname, string paramsval)
         {
             using (SqlConnection con = new SqlConnection(constr))
             {
@@ -43,7 +43,36 @@ namespace 控制台程序获取数据
             
         }
 
-        public static DataSet getAllItemSource(string sqltext)
+        public static DataSet GetAllItemSource(string sqltext, CommandType cmdtype)
+        {
+            try
+            {
+                DataSet ds = new DataSet();
+                using (SqlConnection con = new SqlConnection(constr))
+                {
+                    if (con.State != ConnectionState.Open)
+                    {
+                        con.Open();
+                    }
+                    using (SqlCommand cmd = new SqlCommand())
+                    {   
+                        cmd.Connection = con;
+                        cmd.CommandText = sqltext;
+                        cmd.CommandType = cmdtype;
+                        SqlDataAdapter sda = new SqlDataAdapter(cmd);
+                        sda.Fill(ds);
+                        return ds;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                return null;
+            }
+           
+        }
+
+        public static DataSet GetInfoPageWaitingTopN(string sqltext, CommandType cmdtype,int topCnt)
         {
             try
             {
@@ -58,7 +87,8 @@ namespace 控制台程序获取数据
                     {
                         cmd.Connection = con;
                         cmd.CommandText = sqltext;
-                        cmd.CommandType = CommandType.Text;
+                        cmd.CommandType = cmdtype;
+                        cmd.Parameters.AddWithValue("topCnt", topCnt);
                         SqlDataAdapter sda = new SqlDataAdapter(cmd);
                         sda.Fill(ds);
                         return ds;
@@ -69,10 +99,10 @@ namespace 控制台程序获取数据
             {
                 return null;
             }
-           
+
         }
 
-        public static void loadDataTableToDBModelTable(DataTable dt,string modeltable)
+        public static void LoadDataTableToDBModelTable(DataTable dt,string modeltable)
         {
             if (dt.Rows.Count > 0)
             {
@@ -89,7 +119,7 @@ namespace 控制台程序获取数据
        
         }
 
-        public static bool execProcedureNonParamerters(string procedurename)
+        public static bool ExecProcedureNonParamerters(string procedurename)
         {
             using (SqlConnection con = new SqlConnection(constr))
             {
@@ -115,7 +145,7 @@ namespace 控制台程序获取数据
             }
         }
 
-        public static bool ifExistsHistoryUrl(string url)
+        public static bool IfExistsHistoryUrl(string url)
         {
             bool _result = false;
 

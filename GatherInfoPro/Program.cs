@@ -23,65 +23,48 @@ namespace 控制台程序获取数据
         static void Main(string[] args)
         {
             DataSet ds; string queryString;
-            int callCount = 1;
+            string range = ConfigurationManager.AppSettings["range"];
             string sourceType = ConfigurationManager.AppSettings["sourceType"];
             string autoRun = ConfigurationManager.AppSettings["autoRun"];
-            if (sourceType == "1")
+            int batchCount =  int.Parse(ConfigurationManager.AppSettings["batchCount"]);
+            if (range == "1")//读取列表参数，开始采集...
             {
-                Console.WriteLine("\n\t\t***目前采集的是: { 列表 } 采集源表数据***\n\n");
+                if (sourceType == "1")
+                {
+                    Console.WriteLine("\n\t\t***目前采集的是: { 列表 } 采集源表数据***\n\n");
+                }
+                else if (sourceType == "2")
+                {
+                    Console.WriteLine("\n\t\t***目前采集的是: { 关键字 } 采集源表数据***\n\n");
+                }
+                else
+                {
+                    Console.WriteLine($"\n***目前采集的是所有采集源表数据，XXX 目前没有用");
+                }
+
+                if (sourceType == "1")
+                {
+                    queryString = OnGetItemSourceList(autoRun);
+                }
+                else
+                {
+                    queryString = OnGetItemSourceKeyword(autoRun);
+                }
+
+                ds = DAL.GetAllItemSource(queryString, CommandType.Text);
+                Master(ds, range);
+
             }
-            else if (sourceType == "2")
+            else //直接读取待采信息表
             {
-                Console.WriteLine("\n\t\t***目前采集的是: { 关键字 } 采集源表数据***\n\n");
+                do
+                {
+                    ds = DAL.GetInfoPageWaitingTopN("pr_gather_infopage_waiting", CommandType.StoredProcedure, batchCount);
+                    Master(ds, range);
+                }
+                while (ds.Tables[0].Rows.Count == batchCount);
             }
-            else
-            {
-                Console.WriteLine($"\n***目前采集的是所有采集源表数据，XXX 目前没有用");
-            }
-
-            if (sourceType == "1")
-            {
-                queryString = OnGetItemSourceList(autoRun);
-            }
-            else
-            {
-                queryString = OnGetItemSourceKeyword(autoRun);
-            }
-
-            ds = DAL.getAllItemSource(queryString);
-
-            getItemSourceMaster(ds);
-
-
-            //同步到信息表,监控时间
-
-            Stopwatch sw = new Stopwatch();
-            sw.Start(); //开启计时器
-
-            bool ok = DAL.execProcedureNonParamerters("pr_sync_gather_list_model");
-            while (!ok && callCount < 3)
-            {
-                Console.WriteLine("调用同步过程失败时间：" + string.Format("{0} ms", sw.ElapsedMilliseconds) + $" 重复第 {callCount} 次调用...");
-                callCount++;
-
-                ok = DAL.execProcedureNonParamerters("pr_sync_gather_list_model");
-            }
-            sw.Stop(); //停止计时器
-
-            if (ok)
-            {
-                Console.WriteLine("同步数据执行总时间：" + string.Format("{0} ms", sw.ElapsedMilliseconds) + "\n\r采集完成");
-            }
-            else
-            {
-                Console.WriteLine("同步数据执行总时间：" + string.Format("{0} ms", sw.ElapsedMilliseconds) + "\n\r 本次同步数据失败，半小时内自动同步。。。。。。");
-            }
-
-            if (autoRun == "0")
-            {
-                Console.ReadKey();
-            }
-
+           
         }
 
 
@@ -89,133 +72,219 @@ namespace 控制台程序获取数据
         /// 采集源循环采集
         /// </summary>
         /// <param name="ds"></param>
-        private static void getItemSourceMaster(DataSet ds)
+        private static void Master(DataSet ds, string range)
         {
-            //List<string> list = new List<string>();
-            DataTable dt;
+            DataTable dtList = null; DataTable dtInfoPage = null;
 
-            //对于每个行数据采集列表
-            for (int j = 0; j < ds.Tables[0].Rows.Count; j++)
+            if (range == "1")//循环列表DS获取参数值（参数个数基本固定，独立取出处理）
             {
-                #region 获取并初始化需要的通用行数据
-                dt = null;
-
-                int _sourceid = int.Parse(ds.Tables[0].Rows[j]["id"].ToString());//采集源ID
-                int _opcid = int.Parse(ds.Tables[0].Rows[j]["opc_id"].ToString());//运营中心ID
-                int _wdid = int.Parse(ds.Tables[0].Rows[j]["wd_id"].ToString());//运营中心ID
-                int _class = int.Parse(ds.Tables[0].Rows[j]["class"].ToString());//类别：列表或关键字
-
-                string _sourceurl = ds.Tables[0].Rows[j]["source_url"].ToString();//采集源首页
-                string _gatherurl = ds.Tables[0].Rows[j]["gather_url"].ToString();//参数化、结构化的采集源
-                string listp1 = ds.Tables[0].Rows[j]["list_p1"].ToString() == "-" ? "" : ds.Tables[0].Rows[j]["list_p1"].ToString();  //列表中变化参数1，同$pageno，
-                string listp2 = ds.Tables[0].Rows[j]["list_p2"].ToString() == "-" ? "" : ds.Tables[0].Rows[j]["list_p2"].ToString();  //列表中变化参数2，同$pageno，
-                string param_residual = ds.Tables[0].Rows[j]["param_residual"].ToString() == "-" ? "" : ds.Tables[0].Rows[j]["param_residual"].ToString(); ;//列表固定后缀参数
-
-                //以下两列是关键字采集源列表
-                string _keyword = ds.Tables[0].Columns.Contains("keyword") ? UrlEncode(ds.Tables[0].Rows[j]["keyword"].ToString()) : "";
-                int _seqno = ds.Tables[0].Columns.Contains("seq_no") ? int.Parse(ds.Tables[0].Rows[j]["seq_no"].ToString()) : 0;
-
-                string _url = _gatherurl.Replace("$param1", getTranslationStringDate(listp1)).Replace("$param2", getTranslationStringDate(listp2)).Replace("$kw", _keyword);//动态参数格式
-
-
-                _url += param_residual;//包含页面变量用来循环地址
-                string _infourl = ds.Tables[0].Rows[j]["info_url"].ToString();//信息表参数化,获取网址的时候替换   
-
-                string _urlpattern = ds.Tables[0].Rows[j]["info_url"].ToString();//列表网址拼接格式
-                string _listbegin = ds.Tables[0].Rows[j]["list_begin"].ToString(); //列表开始字符串
-                string _listend = ds.Tables[0].Rows[j]["list_end"].ToString(); //列表结束字符串
-
-                int _firstpageratio = int.Parse(ds.Tables[0].Rows[j]["first_page_ratio"].ToString());
-                int _firstpageplus = int.Parse(ds.Tables[0].Rows[j]["first_page_plus"].ToString());
-                int _firstpage = int.Parse(ds.Tables[0].Rows[j]["first_page"].ToString());//采集的第一页，大于1则表示首页信息和翻页信息不能通用格式
-                int _gatherpages = int.Parse(ds.Tables[0].Rows[j]["gather_pages"].ToString());//非所有页时,实际采集页数
-
-                _firstpage = _firstpage * _firstpageratio + _firstpageplus; //循环的起始页
-                _gatherpages = _gatherpages * _firstpageratio + _firstpageplus;//循环的采集总页数
-
-
-                int _totalpages = int.Parse(ds.Tables[0].Rows[j]["total_pages"].ToString());//列表总页数
-
-                bool _isgatherallpages = bool.Parse(ds.Tables[0].Rows[j]["is_gather_all_pages"].ToString());//是否采集所有页面
-
-
-                bool _isgenericgatherurl = bool.Parse(ds.Tables[0].Rows[j]["is_generic_gather_url"].ToString());//是否采集所有页面
-
-
-                string _listpattern = ds.Tables[0].Rows[j]["list_pattern"].ToString().Replace("单引号", @"'").Replace("双引号", @"""").Replace("斜杠", @"\");//列表页面正则
-                string _listcharset = ds.Tables[0].Rows[j]["list_charset"].ToString();//列表页面字符集
-
-                bool _listispost = bool.Parse(ds.Tables[0].Rows[j]["list_ispost"].ToString());//是否采集所有页面
-
-
-                bool _isgatherinfopages = bool.Parse(ds.Tables[0].Rows[j]["is_gather_infopages"].ToString()); //是否采集具体页面内容
-
-
-
-
-
-                #endregion
-
-                if (_isgatherinfopages)
+                for (int j = 0; j < ds.Tables[0].Rows.Count; j++)
                 {
+                    #region 获取并初始化需要的通用行数据
+                    int _sourceid = int.Parse(ds.Tables[0].Rows[j]["id"].ToString());//采集源ID
+                    int _opcid = int.Parse(ds.Tables[0].Rows[j]["opc_id"].ToString());//运营中心ID
+                    int _wdid = int.Parse(ds.Tables[0].Rows[j]["wd_id"].ToString());//运营中心ID
+                    int _class = int.Parse(ds.Tables[0].Rows[j]["class"].ToString());//类别：列表或关键字
 
+                    string _sourceurl = ds.Tables[0].Rows[j]["source_url"].ToString();//采集源首页
+                    string _gatherurl = ds.Tables[0].Rows[j]["gather_url"].ToString();//参数化、结构化的采集源
+                    string listp1 = ds.Tables[0].Rows[j]["list_p1"].ToString() == "-" ? "" : ds.Tables[0].Rows[j]["list_p1"].ToString();  //列表中变化参数1，同$pageno，
+                    string listp2 = ds.Tables[0].Rows[j]["list_p2"].ToString() == "-" ? "" : ds.Tables[0].Rows[j]["list_p2"].ToString();  //列表中变化参数2，同$pageno，
+                    string param_residual = ds.Tables[0].Rows[j]["param_residual"].ToString() == "-" ? "" : ds.Tables[0].Rows[j]["param_residual"].ToString(); ;//列表固定后缀参数
+
+                    //以下两列是关键字采集源列表
+                    string _keyword = ds.Tables[0].Columns.Contains("keyword") ? UrlEncode(ds.Tables[0].Rows[j]["keyword"].ToString()) : "";
+                    int _seqno = ds.Tables[0].Columns.Contains("seq_no") ? int.Parse(ds.Tables[0].Rows[j]["seq_no"].ToString()) : 0;
+
+                    string _url = _gatherurl.Replace("$param1", GetTranslationStringDate(listp1)).Replace("$param2", GetTranslationStringDate(listp2)).Replace("$kw", _keyword);//动态参数格式
+
+
+                    _url += param_residual;//包含页面变量用来循环地址
+                    string _infourl = ds.Tables[0].Rows[j]["info_url"].ToString();//信息表参数化,获取网址的时候替换   
+
+                    string _urlpattern = ds.Tables[0].Rows[j]["info_url"].ToString();//列表网址拼接格式
+                    string _listbegin = ds.Tables[0].Rows[j]["list_begin"].ToString(); //列表开始字符串
+                    string _listend = ds.Tables[0].Rows[j]["list_end"].ToString(); //列表结束字符串
+
+                    int _firstpageratio = int.Parse(ds.Tables[0].Rows[j]["first_page_ratio"].ToString());
+                    int _firstpageplus = int.Parse(ds.Tables[0].Rows[j]["first_page_plus"].ToString());
+                    int _firstpage = int.Parse(ds.Tables[0].Rows[j]["first_page"].ToString());//采集的第一页，大于1则表示首页信息和翻页信息不能通用格式
+                    int _gatherpages = int.Parse(ds.Tables[0].Rows[j]["gather_pages"].ToString());//非所有页时,实际采集页数
+
+                    _firstpage = _firstpage * _firstpageratio + _firstpageplus; //循环的起始页
+                    _gatherpages = _gatherpages * _firstpageratio + _firstpageplus;//循环的采集总页数
+
+
+                    int _totalpages = int.Parse(ds.Tables[0].Rows[j]["total_pages"].ToString());//列表总页数
+
+                    bool _isgatherallpages = bool.Parse(ds.Tables[0].Rows[j]["is_gather_all_pages"].ToString());//是否采集所有页面
+
+
+                    bool _isgenericgatherurl = bool.Parse(ds.Tables[0].Rows[j]["is_generic_gather_url"].ToString());//是否采集所有页面
+
+
+                    string _listpattern = ds.Tables[0].Rows[j]["list_pattern"].ToString().Replace("单引号", @"'").Replace("双引号", @"""").Replace("斜杠", @"\");//列表页面正则
+                    string _listcharset = ds.Tables[0].Rows[j]["list_charset"].ToString();//列表页面字符集
+
+                    bool _listispost = bool.Parse(ds.Tables[0].Rows[j]["list_ispost"].ToString());//是否采集所有页面
+
+
+
+
+                    int _gathertype = int.Parse(ds.Tables[0].Rows[j]["gather_type"].ToString()); //采集类型 0：仅列表采集 1：采集信息页面（必须连续采集） 2：采集信息页面（可单独GET采集，不需要cookies等）
+                    string _infopattern = ds.Tables[0].Rows[j]["info_pattern"].ToString();
+                    //string _infobegin = ds.Tables[0].Rows[j]["info_begin"].ToString();
+                    //string _infoend = ds.Tables[0].Rows[j]["info_end"].ToString();
+                    string _infocharset = ds.Tables[0].Rows[j]["info_charset"].ToString();
+                    string _inforequestheader = ds.Tables[0].Rows[j]["info_request_header"].ToString();
+                    int _infoopcid = int.Parse(ds.Tables[0].Rows[j]["info_opc_id"].ToString()); //信息对应的表ID
+
+                    string _infofixedfields = ds.Tables[0].Rows[j]["info_fixed_fields"].ToString();
+                    string _infovarfields = ds.Tables[0].Rows[j]["info_var_fields"].ToString();
+                    string _infoparamsfields = ds.Tables[0].Rows[j]["info_params_fields"].ToString();
+
+                    #endregion
+
+                    if (_gathertype == 0 || _gathertype == 1)   //0:仅列表采集  1:需手开启信息采集模式  共同点都只需要进行 pr_sync_gather_list_model
+                    {
+                        dtList = CreateDatatableList(_listpattern);
+                        GatherList(dtList, _sourceid, _opcid, _wdid, _class, _sourceurl, _keyword, _seqno, _url, _infourl, _urlpattern, _listbegin, _listend, _firstpageratio, _firstpage, _gatherpages, _totalpages, _isgatherallpages, _isgenericgatherurl, _listpattern, _listcharset, _listispost, _infopattern, _infocharset, _inforequestheader, _infoopcid, _gathertype, _infofixedfields, _infovarfields, _infoparamsfields);
+                        SyncModelTable("pr_sync_gather_list_model");
+                    }
+                    else if (_gathertype == 2) //2：采集信息列表后，立即对新增加的链接进行具体页面采集（自动采集,指定采集源的ID和CLass，DS过滤） 
+                    {
+                        dtList = CreateDatatableList(_listpattern);
+                        GatherList(dtList, _sourceid, _opcid, _wdid, _class, _sourceurl, _keyword, _seqno, _url, _infourl, _urlpattern, _listbegin, _listend, _firstpageratio, _firstpage, _gatherpages, _totalpages, _isgatherallpages, _isgenericgatherurl, _listpattern, _listcharset, _listispost, _infopattern, _infocharset, _inforequestheader, _infoopcid, _gathertype, _infofixedfields, _infovarfields, _infoparamsfields);
+                        SyncModelTable("pr_sync_gather_list_model");
+                        //dtInfoPage = CreateDatatableInfoPage(dtList);
+
+                    }
+                    else
+                    {
+
+                    }
                 }
-                else //仅采集页面信息
+
+            }
+            else//循环待采池DS获取页面参数值（参数个数是变化的）
+            {
+
+                List<string> list= new List<string>();
+
+                //创建用于批量插入到数据库模板表的DATATABLE
+                if (dtInfoPage == null)
                 {
-                    dt = createDatatable(_listpattern);
-
-                    //不是通用的采集网址，先首页采集
-                    if (!_isgenericgatherurl)
-                    {
-                        Console.WriteLine("source_id: " + _sourceid.ToString() + "\t\t pages:-1" + "\t\t 关键字:" + _seqno.ToString() + " - " + UrlDecode(_keyword));
-                        getListOnly(dt, _class, _opcid, _wdid, _sourceid, _seqno, _keyword, _sourceurl, _listispost, _listcharset, _listpattern, _firstpage - 1, _infourl, _urlpattern, _listbegin, _listend);
-                    }
-
-
-                    if (_isgatherallpages)
-                    {
-                        for (int m = _firstpage; m <= _totalpages; m++)
-                        {
-                            Console.WriteLine("source_id: " + _sourceid.ToString() + "\t\t pages:" + m.ToString() + "\t\t 关键字:" + _seqno.ToString() + " - " + UrlDecode(_keyword));
-                            getListOnly(dt, _class, _opcid, _wdid, _sourceid, _seqno, _keyword, _url.Replace("$pageno", _firstpage.ToString()), _listispost, _listcharset, _listpattern, m, _infourl, _urlpattern, _listbegin, _listend);
-                        }
-
-                    }
-                    else  //如果不是采集所有页，则把【$pageno】-->【gather_pages】页数，循环
-                    {
-
-                        for (int m = _firstpage; m < _firstpage + _gatherpages; m += _firstpageratio)
-                        {
-                            Console.WriteLine("source_id: " + _sourceid.ToString() + "\t\t pages:" + m.ToString() + "\t\t 关键字:" + _seqno.ToString() + " - " + UrlDecode(_keyword));
-                            getListOnly(dt, _class, _opcid, _wdid, _sourceid, _seqno, _keyword, _url.Replace("$pageno", m.ToString()), _listispost, _listcharset, _listpattern, m, _infourl, _urlpattern, _listbegin, _listend);
-                        }
-
-                    }
-
-                    //插入到通用模板表  t_gather_info_model
-                    DAL.loadDataTableToDBModelTable(dt, "t_gather_list_model");
+                    dtInfoPage = CreateDatatableInfoPage(ds.Tables[0],out list);
                 }
+
+                //根据Waiting表上面的正则，转换为匹配的具体数值
+                GatherInfoPage(ds.Tables[0]);
+
+                //将数据放入到信息模板表里面
+                DataView dv = ds.Tables[0].DefaultView;
+                dv.RowFilter = "len(gather_result)=0";
+                dtInfoPage = dv.ToTable(false,list.ToArray());
+
+
+                //插入到模板表
+                DAL.LoadDataTableToDBModelTable(dtInfoPage, "t_gather_infopage_model");
+
+                //处理完本次数据重置容器
+                dtInfoPage = null;
+
+                //数据库模板表数据分配到各个具体信息页面表
+                SyncModelTable("pr_sync_gather_info_model");
+
 
 
             }
-            ////全部采集完后，调用XGMOA上的同步存储过程--中午作业执行
-            //DAL.execProcedureNonParamerters("pr_sync_gather_info_common");
+        }
 
+        ///采集列表函数
+        private static void GatherList(DataTable dt, int _sourceid, int _opcid, int _wdid, int _class, string _sourceurl, string _keyword, int _seqno, string _url, string _infourl, string _urlpattern, string _listbegin, string _listend, int _firstpageratio, int _firstpage, int _gatherpages, int _totalpages, bool _isgatherallpages, bool _isgenericgatherurl, string _listpattern, string _listcharset, bool _listispost, string _infopattern, string _infocharset, string _inforequestheader, int _infoopcid, int _gathertype, string _infofixedfields, string _infovarfields,string _infoparamsfields)
+        {
+            //不是通用的采集网址，先首页采集
+            if (!_isgenericgatherurl)
+            {
+                Console.WriteLine("source_id: " + _sourceid.ToString() + "\t\t pages:-1" + "\t\t 关键字:" + _seqno.ToString() + " - " + UrlDecode(_keyword));
+                GetListOnly(dt, _class, _opcid, _wdid, _sourceid, _seqno, _keyword, _sourceurl, _listispost, _listcharset, _listpattern, _firstpage - 1, _infourl, _urlpattern, _listbegin, _listend, _infopattern, _infocharset, _inforequestheader, _infoopcid, _gathertype, _infofixedfields, _infovarfields, _infoparamsfields);
+            }
+
+
+            if (_isgatherallpages)
+            {
+                for (int m = _firstpage; m <= _totalpages; m++)
+                {
+                    Console.WriteLine("source_id: " + _sourceid.ToString() + "\t\t pages:" + m.ToString() + "\t\t 关键字:" + _seqno.ToString() + " - " + UrlDecode(_keyword));
+                    GetListOnly(dt, _class, _opcid, _wdid, _sourceid, _seqno, _keyword, _url.Replace("$pageno", _firstpage.ToString()), _listispost, _listcharset, _listpattern, m, _infourl, _urlpattern, _listbegin, _listend, _infopattern, _infocharset, _inforequestheader, _infoopcid, _gathertype, _infofixedfields, _infovarfields, _infoparamsfields);
+                }
+
+            }
+            else  //如果不是采集所有页，则把【$pageno】-->【gather_pages】页数，循环
+            {
+
+                for (int m = _firstpage; m < _firstpage + _gatherpages; m += _firstpageratio)
+                {
+                    Console.WriteLine("source_id: " + _sourceid.ToString() + "\t\t pages:" + m.ToString() + "\t\t 关键字:" + _seqno.ToString() + " - " + UrlDecode(_keyword));
+                    GetListOnly(dt, _class, _opcid, _wdid, _sourceid, _seqno, _keyword, _url.Replace("$pageno", m.ToString()), _listispost, _listcharset, _listpattern, m, _infourl, _urlpattern, _listbegin, _listend, _infopattern, _infocharset, _inforequestheader, _infoopcid, _gathertype, _infofixedfields, _infovarfields, _infoparamsfields);
+                }
+
+            }
+
+            //插入到通用列表模板表  t_gather_infopage_model
+            DAL.LoadDataTableToDBModelTable(dt, "t_gather_list_model");
+        }
+
+        ///采集信息函数
+        private static void GatherInfoPage(DataTable dt)
+        {
+            string p1;string response;bool isException;bool isRegMatch;
+            for (int i = 0; i < dt.Rows.Count; i++)
+            {
+                response = GetData(dt.Rows[i]["info_url"].ToString(), dt.Rows[i]["info_charset"].ToString(),out isException);
+
+                //访问URL正常返回数据
+                if (!isException)
+                {
+                    string errorStrings = string.Empty;
+                    string errorString = string.Empty;
+                    response = DealwithResponse(response);
+                    foreach (var item in dt.Rows[i]["info_var_fields"].ToString().Split(','))
+                    {
+                        dt.Rows[i][item] = GetInfoPageData(response, dt.Rows[i][item].ToString(), item, out errorString);
+                        errorStrings += errorString;
+                    }
+                    dt.Rows[i]["gather_result"] = errorStrings;
+
+                    if (errorStrings.Length > 0)
+                    {
+                        dt.Rows[i]["status"] = 2;   //采集失败
+                    }
+                    else
+                    {
+                        dt.Rows[i]["status"] = 1;   //采集成功
+                    }
+                }
+                else //访问异常
+                {
+                    dt.Rows[i]["status"] = 2;
+                    dt.Rows[i]["gather_result"] = response;
+                }
+            }
         }
 
         /// <summary>
-        /// 创建存储采集数据的容器DataTable
+        /// 创建存储采集数据列表的容器DataTable
         /// </summary>
         /// <param name="pattern"></param>
         /// <returns></returns>
-        private static DataTable createDatatable(string pattern)
+        private static DataTable CreateDatatableList(string pattern)
         {
-            DataTable dt = new DataTable();
+            DataTable dt = new DataTable("list");
             Regex rg = new Regex(@"\(\?<(.*?)>", RegexOptions.IgnoreCase);
             if (rg.IsMatch(pattern))
             {
                 MatchCollection matches = rg.Matches(pattern);
-
 
                 for (int i = 0; i < matches.Count; i++)
                 {
@@ -226,7 +295,6 @@ namespace 控制台程序获取数据
                     {
                         dt.Columns.Add(dc);
                     }
-
                 }
                 //没有发布日期，正则就不会生成此列，导致后面赋值判断异常
                 if (!dt.Columns.Contains("publish_date"))
@@ -245,7 +313,7 @@ namespace 控制台程序获取数据
                     dt.Columns.Add("info_title");
                 }
 
-
+                //除了正则列和必须的列以外，列表固定列
                 dt.Columns.Add("class");
                 dt.Columns.Add("opc_id");
                 dt.Columns.Add("wd_id");
@@ -254,10 +322,60 @@ namespace 控制台程序获取数据
                 dt.Columns.Add("keyword");
                 dt.Columns.Add("seq_no");
 
+                //除了正则列和必须的列以外，信息固定列
+                dt.Columns.Add("info_pattern");
+                dt.Columns.Add("info_charset");
+                dt.Columns.Add("info_request_header");
+                dt.Columns.Add("info_opc_id");
+                dt.Columns.Add("gather_type");
+                dt.Columns.Add("info_fixed_fields");
+                dt.Columns.Add("info_var_fields");
+                dt.Columns.Add("info_params_fields");
+            }
+            return dt;
+        }
+
+        /// <summary>
+        /// 创建存储采集数据具体信息表的容器DataTable
+        /// </summary>
+        /// <param name="pattern"></param>
+        /// <returns></returns>
+        private static DataTable CreateDatatableInfoPage(DataTable dtInfoPageWaiting,out List<string> outFieldsInSingleColumn)
+        {
+            DataTable dt = new DataTable("infopage");
+            List<string> fields = new List<string>();
+            List<string> FieldsInSingleColumn = new List<string>();
+            string f1; string f2; string f3;
+
+            for (int i = 0; i < dtInfoPageWaiting.Rows.Count; i++)
+            {
+                f1 = dtInfoPageWaiting.Rows[i]["info_fixed_fields"].ToString();
+                f2 = dtInfoPageWaiting.Rows[i]["info_var_fields"].ToString();
+                //f3 = dtInfoPageWaiting.Rows[i]["info_params_fields"].ToString();
+                fields.Add(f1);
+                fields.Add(f2);
+                //fields.Add(f3);
             }
 
-            return dt;
+            foreach (var items in fields.Distinct().ToList())
+            {
+                var item = items.Split(',');
+                foreach (var item1 in item)
+                {
+                    DataColumn dc = new DataColumn
+                    {
+                        ColumnName = item1.ToString()
+                    };
 
+                    if (!dt.Columns.Contains(dc.ColumnName))
+                    {
+                        dt.Columns.Add(dc);
+                        FieldsInSingleColumn.Add(dc.ToString());
+                    }
+                }
+            }
+            outFieldsInSingleColumn = FieldsInSingleColumn;
+            return dt;
         }
 
         //备用没用到
@@ -440,7 +558,7 @@ namespace 控制台程序获取数据
         /// <param name="listbegin"></param>
         /// <param name="listend"></param>
         /// <returns></returns>
-        private static DataTable getListOnly(DataTable dt, int classid, int opcid, int wdid, int sourceid, int seq, string keyword, string url, bool ispost, string charset, string pattern, int pageno, string infourl, string urlpattern, string listbegin, string listend)
+        private static DataTable GetListOnly(DataTable dt, int classid, int opcid, int wdid, int sourceid, int seq, string keyword, string url, bool ispost, string charset, string pattern, int pageno, string infourl, string urlpattern, string listbegin, string listend, string _infopattern, string _infocharset, string _inforequestheader, int _infoopcid, int _gathertype, string _infofixedfields, string _infovarfields,string _infoparamsfields)
         {
 
             #region 1.采集过程
@@ -473,13 +591,13 @@ namespace 控制台程序获取数据
             //没有异常
             if (!isException)
             {
-                response = DealwithSpecialCharactersTag(response);
+                response = DealwithResponse(response);
                 Regex rg = new Regex(pattern, RegexOptions.IgnoreCase);//指定不区分大小写的匹配
                 if (response != null || response.Length > 0)
                 {
                     if (listbegin.Length > 0 && listend.Length > 0)
                     {
-                        response = substringContentList(response, listbegin, listend);
+                        response = SubstringResponse(response, listbegin, listend);
                     }
 
                     //bool isMatch = rg.IsMatch(_content);
@@ -503,8 +621,6 @@ namespace 控制台程序获取数据
                             dr["info_title"] = DealWithTitle(dr["info_title"].ToString());
 
 
-
-
                             //防止日期采集出问题,
                             dr["publish_date"] = DealWithPublishDate(dr["publish_date"].ToString(), url);
 
@@ -523,6 +639,14 @@ namespace 控制台程序获取数据
                             dr["wd_id"] = wdid.ToString();
                             dr["keyword"] = UrlDecode(keyword);
                             dr["seq_no"] = seq.ToString();
+                            dr["info_pattern"] = _infopattern;
+                            dr["info_charset"] = _infocharset;
+                            dr["info_request_header"] = _inforequestheader;
+                            dr["info_opc_id"] = _infoopcid.ToString();
+                            dr["gather_type"] = _gathertype.ToString();
+                            dr["info_fixed_fields"] = _infofixedfields;
+                            dr["info_var_fields"] = _infovarfields;
+                            dr["info_params_fields"] = _infoparamsfields;
                             dt.Rows.Add(dr);
                         }
                     }
@@ -562,7 +686,7 @@ namespace 控制台程序获取数据
         /// </summary>
         /// <param name="param"></param>
         /// <returns></returns>
-        private static string getTranslationStringDate(string param)
+        private static string GetTranslationStringDate(string param)
         {
             string _result = "";
             switch (param)
@@ -616,8 +740,10 @@ namespace 控制台程序获取数据
         /// <param name="listbegin"></param>
         /// <param name="listend"></param>
         /// <returns></returns>
-        public static string substringContentList(string content, string listbegin, string listend)
+        public static string SubstringResponse(string content, string listbegin, string listend)
         {
+            //Regex rg = new Regex(listbegin + @"(.*?)" + listend);
+            //return rg.Match(content).Groups[1].ToString();
             Regex rg = new Regex(listbegin + ".*?" + listend);
             return rg.Match(content).ToString();
         }
@@ -627,13 +753,13 @@ namespace 控制台程序获取数据
         /// </summary>
         /// <param name="content"></param>
         /// <returns></returns>
-        public static string DealwithSpecialCharactersTag(string content)
+        public static string DealwithResponse(string content)
         {
             string result = null;
             content = content.Replace("\t", "").Replace("\r", "").Replace("\n", "").Replace("&nbsp;", "");
 
             //将内容中的脚本去除
-            content = Regex.Replace(Regex.Replace(Regex.Replace(content, @"<script.*?</.*?script.*?>", ""), @"replace.*?\(.*?\)", ""), "var.*?/.*?/", "");
+            content = Regex.Replace(Regex.Replace(Regex.Replace(Regex.Replace(content, @"<script.*?</.*?script.*?>", ""), @"replace.*?\(.*?\)", ""), "var.*?/.*?/", ""), "<!--.*?-->", "");
             try
             {
                 //将Unicode标识\U6278 转换为中文
@@ -691,6 +817,31 @@ namespace 控制台程序获取数据
         }
 
         /// <summary>
+        /// 处理采集的标题格式
+        /// </summary>
+        /// <param name="title"></param>
+        /// <returns></returns>
+        public static string DealWithTitle(string title)
+        {
+            //string result = Regex.Replace(Regex.Replace(Regex.Replace(Regex.Replace(Regex.Replace(title.ToLower(), "<font.*?>", ""), "</font.*?>", ""), " ", ""), "<span.*?>", ""), "</span.*?>", "");
+
+            string result = Regex.Replace(title, "</?[a-z].*?>","", RegexOptions.IgnoreCase);
+            if (result.Length > 200)
+            {
+                return result.Substring(0, 200);//限制在200个字符以内
+            }
+            else
+            {
+                return result;
+            }
+        }
+
+        private static string DealWithContent(string content)
+        {
+            return Regex.Replace(content, "</?[a-z].*?>", "",RegexOptions.IgnoreCase);
+        }
+
+        /// <summary>
         /// 处理采集的发布日期格式
         /// </summary>
         /// <param name="publishDate"></param>
@@ -737,24 +888,6 @@ namespace 控制台程序获取数据
         }
 
         /// <summary>
-        /// 处理采集的标题格式
-        /// </summary>
-        /// <param name="title"></param>
-        /// <returns></returns>
-        public static string DealWithTitle(string title)
-        {
-            string result = Regex.Replace(Regex.Replace(Regex.Replace(Regex.Replace(Regex.Replace(title.ToLower(), "<font.*?>", ""), "</font.*?>", ""), " ", ""), "<span.*?>", ""), "</span.*?>", "");
-            if (result.Length > 200)
-            {
-                return result.Substring(0, 200);//限制在200个字符以内
-            }
-            else
-            {
-                return result;
-            }
-        }
-
-        /// <summary>
         /// 处理采集的Url格式
         /// </summary>
         /// <param name="urlpattern">信息组成样式</param>
@@ -773,8 +906,10 @@ namespace 控制台程序获取数据
                 int cnt = Regex.Matches(url, @"\.\./").Count;
                 string[] result = urlpattern.Split('/');
                 for (int i = 0; i < result.Length - cnt - 1; i++)
-                {
+                {   
                     domain += result[i] + "/";
+              
+                   
                 }
                 isDealed = true;
                 return domain + url.Replace("../", "");
@@ -806,7 +941,6 @@ namespace 控制台程序获取数据
             //信息页面，编码和不编码，用GETDATA访问的时候，没有任何区别。
             string a = HttpUtility.UrlDecode("%e6%8b%9b%e6%a0%87");
             string b = HttpUtility.UrlEncode("招标");
-
             return "s";
 
         }
@@ -816,18 +950,18 @@ namespace 控制台程序获取数据
         /// </summary>
         /// <param name="autoRun"></param>
         /// <returns></returns>
-        public static string OnGetItemSourceList(string autoRun)
+        private static string OnGetItemSourceList(string autoRun)
         {
-
             string queryString = @"Select class,wd_id,opc_id,id,source_url,gather_url,list_p1,list_p2,param_residual
                                                  ,first_page,gather_pages,total_pages,is_gather_all_pages
                                                  ,list_pattern,list_charset,list_ispost,info_url
-                                                 ,is_gather_infopages,is_generic_gather_url
+                                                 ,gather_type,is_generic_gather_url
                                                  ,list_begin,list_end,first_page_ratio,first_page_plus
-                                                from t_item_source_list where valid=1";
+                                                 ,info_pattern,info_charset,info_request_header,info_opc_id
+                                                 ,info_fixed_fields,info_var_fields,info_params_fields
+                                                from t_item_source_list where valid=1  ";
 
             return ValidateInput(autoRun, queryString);
-
         }
 
         /// <summary>
@@ -835,16 +969,18 @@ namespace 控制台程序获取数据
         /// </summary>
         /// <param name="autoRun"></param>
         /// <returns></returns>
-        public static string OnGetItemSourceKeyword(string autoRun)
+        private static string OnGetItemSourceKeyword(string autoRun)
         {
             string queryString = @"select class,wd_id,opc_id,id,source_url,gather_url,list_p1,list_p2,param_residual
                                                  ,first_page,gather_pages,total_pages,is_gather_all_pages
                                                  ,list_pattern,list_charset,list_ispost,info_url
-                                                 ,is_gather_infopages,is_generic_gather_url
+                                                 ,gather_type,is_generic_gather_url
                                                  ,list_begin,list_end,first_page_ratio,first_page_plus
                                                  ,value as keyword,seq as seq_no
+                                                 ,info_pattern,info_charset,info_request_header,info_opc_id
+                                                 ,info_fixed_fields,info_var_fields,info_params_fields
                                     from t_item_source_keyword  cross apply dbo.fn_clr_split_by_separator(keywords,'|') as a
-                                    where valid=1";
+                                    where valid=1   ";
             return ValidateInput(autoRun, queryString);
         }
 
@@ -854,7 +990,7 @@ namespace 控制台程序获取数据
         /// <param name="autoRun"></param>
         /// <param name="queryString"></param>
         /// <returns></returns>
-        public static string ValidateInput(string autoRun, string queryString)
+        private static string ValidateInput(string autoRun, string queryString)
         {
             bool legal = false;
             string input = "", input2 = "", result = "";
@@ -906,7 +1042,6 @@ namespace 控制台程序获取数据
             return queryString;
         }
 
-
         /// <summary>
         /// 中文转百分号格式
         /// </summary>
@@ -928,12 +1063,126 @@ namespace 控制台程序获取数据
 
         }
 
+        /// <summary>
+        /// 将数字格式的时间戳转换为日期格式
+        /// </summary>
+        /// <param name="timeStamp"></param>
+        /// <returns></returns>
         private static DateTime ConvertStringToDateTime(string timeStamp)
         {
             DateTime dtStart = TimeZone.CurrentTimeZone.ToLocalTime(new DateTime(1970, 1, 1));
             long lTime = long.Parse(Regex.Replace(timeStamp, @"\s", "") + "0000");
             TimeSpan toNow = new TimeSpan(lTime);
             return dtStart.Add(toNow);
+        }
+
+        /// <summary>
+        /// 将t_gather_list_model数据分发到对应的列表Table
+        /// </summary>
+        /// <returns></returns>
+        private static bool SyncModelTable(string procedureName)
+
+        {
+            int callCount = 1;
+
+            //同步到信息表,监控时间
+            Stopwatch sw = new Stopwatch();
+            sw.Start(); //开启计时器
+
+            bool ok = DAL.ExecProcedureNonParamerters(procedureName);
+            while (!ok && callCount < 3)
+            {
+                Console.WriteLine("调用同步过程失败时间：" + string.Format("{0} ms", sw.ElapsedMilliseconds) + $" 重复第 {callCount} 次调用...");
+                callCount++;
+
+                ok = DAL.ExecProcedureNonParamerters(procedureName);
+            }
+            sw.Stop(); //停止计时器
+
+            if (ok)
+            {
+                Console.WriteLine("同步数据执行总时间：" + string.Format("{0} ms", sw.ElapsedMilliseconds) + "\n\r采集完成");
+                return true;
+            }
+            else
+            {
+                Console.WriteLine("同步数据执行总时间：" + string.Format("{0} ms", sw.ElapsedMilliseconds) + "\n\r 本次同步数据失败，半小时内自动同步。。。。。。");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 处理具体信息页面所有需要采集的字段值
+        /// </summary>
+        /// <param name="item"></param>
+        /// <param name="text"></param>
+        /// <returns></returns>
+        private static string DealWithInfoPageFields(string item,string text )
+        {
+            if (item == "info_title")
+            {
+                return DealWithTitle(text);
+            }
+            else if (item == "info_content")
+            {
+                return DealWithContent(text); ;
+            }
+            else if (item == "publish_date")
+            {
+                return DealWithPublishDate(text,"");
+            }
+            else
+            {
+                return text;
+            }
+        }
+
+        /// <summary>
+        /// 将Waiting表里面的正则样式转化为具体数值返回
+        /// </summary>
+        /// <param name="response"></param>
+        /// <param name="pattern"></param>
+        /// <param name="field"></param>
+        /// <param name="outErrorFiels"></param>
+        /// <returns></returns>
+        private static string GetInfoPageData(string response, string pattern,string field,out string outErrorFiels)
+        {
+            string begin = string.Empty;
+            string end = string.Empty;
+            string r = string.Empty;
+            foreach (var group in pattern.Split(new string[] { "||" }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (group.Split(new char[] { '|'},StringSplitOptions.RemoveEmptyEntries).Length == 2)
+                {
+                    begin = group.Split('|')[0];
+                    end = group.Split('|')[1];
+                    Regex rg = new Regex(begin + @"(.*?)" + end);
+                    if (rg.IsMatch(response))
+                    {   
+                        
+                        r = rg.Match(response).Groups[1].ToString();
+                        if (r.Length > 0)
+                        {
+                            outErrorFiels = null;
+                            return DealWithInfoPageFields(field, r);
+                        }
+                        else
+                        {
+                            //匹配到了内容为空
+                            outErrorFiels = null;
+                            return "正则匹配成功 < 内容为空 >";
+                        }
+                    }
+                }
+                else
+                {
+                    outErrorFiels = field + " -- 正则格式错误";
+                    return pattern;
+                }
+   
+            }
+            outErrorFiels = field + " -- 正则匹配失败   ";
+            return pattern ;
         }
     }
 }

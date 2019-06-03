@@ -32,6 +32,7 @@ namespace 控制台程序获取数据
 
         }
 
+        //备用没用到
         public static String Post(String url, String param, String encode)
         {
             Encoding encoding = System.Text.Encoding.UTF8;
@@ -46,14 +47,16 @@ namespace 控制台程序获取数据
             return html;
         }
 
-        private static void InitHttpWebRequestHeaders(HttpWebRequest request)
+        //备用没用到
+        public static void InitHttpWebRequestHeaders(HttpWebRequest request)
         {
             request.ContentType = contentType;
             request.Accept = accept;
             request.UserAgent = userAgent;
         }
 
-        private static String ReadHtml(HttpWebRequest request, String encode)
+        //备用没用到
+        public static String ReadHtml(HttpWebRequest request, String encode)
         {
             HttpWebResponse response = request.GetResponse() as HttpWebResponse;
             Stream stream = response.GetResponseStream();
@@ -62,6 +65,45 @@ namespace 控制台程序获取数据
             reader.Close();
             stream.Close();
             return content;
+        }
+
+        //备用没用到
+        public static string PostData1(string url, string postData)
+        {
+            ASCIIEncoding encoding = new ASCIIEncoding();
+            byte[] data = encoding.GetBytes(postData);
+            HttpWebRequest myRequest = (HttpWebRequest)WebRequest.Create(url);
+
+            myRequest.Method = "POST";
+            myRequest.ContentType = "application/x-www-form-urlencoded";
+            myRequest.ContentLength = data.Length;
+            Stream newStream = myRequest.GetRequestStream();
+
+            newStream.Write(data, 0, data.Length);
+            newStream.Close();
+            HttpWebResponse myResponse = null;
+
+            try
+            {
+                myResponse = (HttpWebResponse)myRequest.GetResponse();
+                StreamReader reader = new StreamReader(myResponse.GetResponseStream(), Encoding.Default);
+                string content = reader.ReadToEnd();
+                reader.Close();
+                return content;
+            }
+            catch (WebException ex)
+            {
+                myResponse = ex.Response as HttpWebResponse;
+                using (Stream errData = myResponse.GetResponseStream())
+                {
+                    using (StreamReader sr = new StreamReader(errData))
+                    {
+                        string res = sr.ReadToEnd();
+                        return res;
+                    }
+                }
+
+            }
         }
 
     }

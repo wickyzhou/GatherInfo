@@ -129,6 +129,7 @@ namespace 控制台程序获取数据
         /// <param name="ds"></param>
         private static void ListMaster(DataSet ds)
         {
+            int listCount = 0;
             for (int i = 0; i < ds.Tables.Count; i++)
             {
                 for (int j = 0; j < ds.Tables[i].Rows.Count; j++)
@@ -188,13 +189,24 @@ namespace 控制台程序获取数据
                         {
                             InfoPageMaster(_ds);
                         }
+                        else
+                        {
+                            Console.WriteLine("\t没有数据更新");
+                        }
+                    }
+                    
+                    if(gatherType!=2)
+                    {
+                        listCount++;
                     }
                 }
-                Console.WriteLine("\n\n------------- 本批次列表采集全部完成 ----------------");
-                SyncModelTable("pr_sync_gather_list_model");
-                Console.WriteLine("--------------------------------------------------------------------------------------\n");
             }
-          
+            if (listCount>0)
+            {
+                SyncModelTable("pr_sync_gather_list_model");
+            }
+            Console.WriteLine("\n\n------------- 本批次列表同步全部完成 ----------------");        
+
         }
 
         /// <summary>

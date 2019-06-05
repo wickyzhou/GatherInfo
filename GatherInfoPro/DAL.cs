@@ -132,7 +132,6 @@ namespace 控制台程序获取数据
                     cmd.Connection = con;
                     cmd.CommandText = procedurename;
                     cmd.CommandType = CommandType.StoredProcedure;
-                    cmd.CommandTimeout = 10;
                     try
                     {
                         cmd.ExecuteNonQuery();

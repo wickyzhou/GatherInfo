@@ -19,7 +19,7 @@ namespace 控制台程序获取数据
 {
     class Program
     {
-        static DataTable dtList = null; static DataTable dtInfoPage = null;
+      
         static readonly string releaseConfig = ConfigurationManager.AppSettings["releaseConfig"];
         static readonly string runModel = ConfigurationManager.AppSettings["runModel"];
         static readonly int batchCount = int.Parse(ConfigurationManager.AppSettings["batchCount"]);
@@ -129,6 +129,7 @@ namespace 控制台程序获取数据
         /// <param name="ds"></param>
         private static void ListMaster(DataSet ds)
         {
+            DataTable dtList = null;
             int listCount = 0;
             for (int i = 0; i < ds.Tables.Count; i++)
             {
@@ -144,7 +145,7 @@ namespace 控制台程序获取数据
                     string gatherUrl = ds.Tables[i].Rows[j]["gather_url"].ToString();//参数化、结构化的采集源
                     string listP1 = ds.Tables[i].Rows[j]["list_p1"].ToString() == "-" ? "" : ds.Tables[i].Rows[j]["list_p1"].ToString();  //列表中变化参数1，同$pageno，
                     string listP2 = ds.Tables[i].Rows[j]["list_p2"].ToString() == "-" ? "" : ds.Tables[i].Rows[j]["list_p2"].ToString();  //列表中变化参数2，同$pageno，
-                    string paramResidual = ds.Tables[i].Rows[j]["param_residual"].ToString() == "-" ? "" : ds.Tables[i].Rows[j]["param_residual"].ToString(); ;//列表固定后缀参数
+                    string paramResidual = ds.Tables[i].Rows[j]["param_residual"].ToString() == "-" ? "" : ds.Tables[i].Rows[j]["param_residual"].ToString();//列表固定后缀参数
                     string keywords = ds.Tables[i].Columns.Contains("keywords") ? ds.Tables[i].Rows[j]["keywords"].ToString() : "1";//关键字采集源列表-关键字字段（逗号分隔用来识别是不是整个采集源所有关键字已采集结束）
                     string keyword = ds.Tables[i].Columns.Contains("keyword") ? UrlEncode(ds.Tables[i].Rows[j]["keyword"].ToString()) : "";//关键字采集源列表-拆分后单个关键字（用来循环采集）
                     int seqNo = ds.Tables[i].Columns.Contains("seq_no") ? int.Parse(ds.Tables[i].Rows[j]["seq_no"].ToString()) : 1;         //关键字采集源列表序号
@@ -176,12 +177,16 @@ namespace 控制台程序获取数据
 
                     #endregion
 
+                    //每次都要根据正则来重建DT
                     dtList = CreateDatatableList(listPattern);
+
+                    
+     
                     GatherList(dtList, sourceID, listOpcID, provinceID, classID, sourceUrl, keyword, seqNo, url, infoURL, urlPattern, listBegin, listEnd, firstPageRatio, firstPage, gatherPages, totalPages, isGatherAllPages, isGenericGatherUrl, listPattern, listCharset, listIsPost, infoPattern, infoCharset, infoRequestHeader, infoOpcID, gatherType, infoFixedFields, infoVarFields, infoParamsFields);
 
                     //0:仅列表采集  1：采集信息到Waiting信息表（通过改变配置 "release"=>releaseConfig="120" 或"debug"=> 输入待采信息ID 执行采集）  2：采集完列表后立即采集信息
                     if (gatherType == 2 && keywords.Split('|').Length == seqNo)
-                    {
+                    {    
                         SyncModelTable("pr_sync_gather_list_model");
                         //采集列表后，直接获取待采池子里面的对应此sourceID数据，然后调用信息采集
                         DataSet _ds = DAL.GetAllItemSource("select * from t_gather_infopage_waiting where status=0 and ins_time>cast( dateadd(dd,-7,getdate()) as date) and source_id=" + sourceID.ToString(), CommandType.Text);
@@ -199,6 +204,9 @@ namespace 控制台程序获取数据
                     {
                         listCount++;
                     }
+
+                    //重置列表容器，针对每个采集源listPattern定义不同结构的DT
+                    dtList = null;
                 }
             }
             if (listCount>0)
@@ -215,7 +223,7 @@ namespace 控制台程序获取数据
         /// <param name="ds"></param>
         private static void InfoPageMaster(DataSet ds)
         {
-
+            DataTable dtInfoPage = null;
             List<string> list = new List<string>();
 
             //创建用于批量插入到数据库模板表的DATATABLE
@@ -236,8 +244,7 @@ namespace 控制台程序获取数据
             //插入到模板表
             DAL.LoadDataTableToDBModelTable(dtInfoPage, "t_gather_infopage_model");
 
-            //处理完本次数据重置容器
-            dtInfoPage = null;
+
 
             //数据库模板表数据分配到各个具体信息页面表
             SyncModelTable("pr_sync_gather_infopage_model");
@@ -319,6 +326,7 @@ namespace 控制台程序获取数据
             string p1; string response; bool isException;
             for (int i = 0; i < dt.Rows.Count; i++)
             {
+                Console.WriteLine("\t 正在采集... "+dt.Rows[i]["info_url"].ToString());
                 response = GetData(dt.Rows[i]["info_url"].ToString(), dt.Rows[i]["info_charset"].ToString(), out isException);
 
                 //访问URL正常返回数据
@@ -812,29 +820,6 @@ namespace 控制台程序获取数据
 
         }
 
-        /// <summary>
-        /// 验证程序运行时，控制台输入值是否合法
-        /// </summary>
-        /// <param name="input"></param>
-        /// <param name="ifLegal"></param>
-        /// <returns></returns>
-        private static string DealWithInput(string input, out bool ifLegal)
-        {
-            string result = "0";
-            input = DealWithBlank(input);
-            if (Int64.TryParse(input.Replace(",", ""), out _))
-            {
-                string[] items = input.Split(new char[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
-                result = string.Join(",", items);
-                ifLegal = true;
-            }
-            else
-            {
-                ifLegal = false;
-            }
-
-            return result;
-        }
 
         /// <summary>
         /// 处理空白符和后台源代码中的空格
@@ -845,7 +830,7 @@ namespace 控制台程序获取数据
         {
             if (input != null)
             {
-                return input.Replace("\t", "").Replace("\r", "").Replace("\n", "").Replace(" ", ",");
+                return input.Replace("\t", "").Replace("\r", "").Replace("\n", "").Replace(" ", "");
             }
             else
             {
@@ -863,7 +848,7 @@ namespace 控制台程序获取数据
         {
             //string result = Regex.Replace(Regex.Replace(Regex.Replace(Regex.Replace(Regex.Replace(title.ToLower(), "<font.*?>", ""), "</font.*?>", ""), " ", ""), "<span.*?>", ""), "</span.*?>", "");
 
-            string result = Regex.Replace(title, "</?[a-z].*?>", "", RegexOptions.IgnoreCase);
+            string result = DealWithBlank(Regex.Replace(title, "</?[a-z].*?>", "", RegexOptions.IgnoreCase));
             if (result.Length > 200)
             {
                 return result.Substring(0, 200);//限制在200个字符以内
@@ -876,7 +861,8 @@ namespace 控制台程序获取数据
 
         private static string DealWithContent(string content)
         {
-            return Regex.Replace(content, "</?[a-z].*?>", "", RegexOptions.IgnoreCase);
+            //return Regex.Replace(content, "</?[a-z].*?>", "", RegexOptions.IgnoreCase);  保留格式，不保留字体。
+            return Regex.Replace(Regex.Replace(content, "<!--.*?-->", "", RegexOptions.IgnoreCase), "</?font.*?>", "",RegexOptions.IgnoreCase);
         }
 
         /// <summary>
@@ -963,7 +949,7 @@ namespace 控制台程序获取数据
             else
             {
                 isDealed = false;
-                return url;
+                return System.Web.HttpUtility.HtmlDecode(url);
             }
         }
 
@@ -1026,18 +1012,18 @@ namespace 控制台程序获取数据
         /// <returns></returns>
         private static string ValidateInput(string gatherType)
         {
-            bool legal = false;
+            bool legal = false; string condition = string.Empty;
             string input = string.Empty, queryString = string.Empty, message = string.Empty;
             string queryString1 = string.Empty, queryString2 = string.Empty, queryString3 = string.Empty;
             if (gatherType == "1")
             {
-                message = "\n\n\n=====  请输入列表采集源ID，多个值用逗号分割，ENTER键 确认";
+                message = "\n\n\n=====  请输入列表采集源ID，多个值用 < 逗号 > 分隔， 数字区间用 < 空格 > 分隔  ，【ENTER键】 确认";
                 queryString1 = OnGetItemSourceListString();
                 queryString2 = OnGetSearchKeywordListString();
             }
             else
             {
-                message = "\n=====  请输入待采信息Waiting表信息ID，多个值用逗号分割，ENTER键 确认";
+                message = "\n=====  请输入待采信息Waiting表信息ID，多个值用 < 逗号 > 分隔， 数字区间用 < 空格 > 分隔  ，  【ENTER键】 确认";
                 queryString3 = OnGetInfoPageWaitingString();
             }
 
@@ -1046,22 +1032,41 @@ namespace 控制台程序获取数据
             {
                 input = Console.ReadLine().Replace("，",",");
                 input = input.EndsWith(",",StringComparison.OrdinalIgnoreCase) ? input.Substring(0, input.Length - 1) : input;
-                foreach (var item in input.Split(new string[] { ","}, StringSplitOptions.None))
-                {
-                    legal = int.TryParse(item, out _);
-                    if (!legal)
-                    {
-                        Console.WriteLine("\t   ~888~ 请输入正确合法的数字ID ...  ");
-                        break;
-                    }
 
+                if (input.Contains(" "))
+                {
+                    foreach (var item in input.Split(new char[] { ' '}, 2))
+                    {
+                        legal = int.TryParse(item, out _);
+                        if (!legal)
+                        {
+                            Console.WriteLine("\t   ~888~ 请输入正确合法的数字ID ...  ");
+                            break;
+                        }
+                    }
+                    condition = " and id between "+ input.Split(new char[] { ' ' }, 2) [0]+  " and "+ input.Split(new char[] { ' ' }, 2)[1];
                 }
+                else
+                {
+                    foreach (var item in input.Split(new string[] { "," }, StringSplitOptions.None))
+                    {
+                        legal = int.TryParse(item, out _);
+                        if (!legal)
+                        {
+                            Console.WriteLine("\t   ~888~ 请输入正确合法的数字ID ...  ");
+                            break;
+                        }
+
+                    }
+                    condition = " and id in(" + input + ");  ";
+                }
+
             }
             while (!legal);
             Console.WriteLine("\n");
-            queryString1 = string.IsNullOrEmpty(queryString1) ? "" : queryString1 + " and id in(" + input + ");  ";
-            queryString2 = string.IsNullOrEmpty(queryString2) ? "" : queryString2 + " and id in(" + input + ");  ";
-            queryString3 = string.IsNullOrEmpty(queryString3) ? "" : queryString3 + " and id in(" + input + ");  ";
+            queryString1 = string.IsNullOrEmpty(queryString1) ? "" : queryString1 + condition;
+            queryString2 = string.IsNullOrEmpty(queryString2) ? "" : queryString2 + condition;
+            queryString3 = string.IsNullOrEmpty(queryString3) ? "" : queryString3 + condition;
             return queryString1 + queryString2 + queryString3;
         }
 
@@ -1165,7 +1170,7 @@ namespace 控制台程序获取数据
             }
             else if (item == "publish_date")
             {
-                return DealWithPublishDate(text, "");
+                return DealWithPublishDate(text, "")??DateTime.Now.ToString("yyyy-MM-dd");
             }
             else
             {
@@ -1217,8 +1222,17 @@ namespace 控制台程序获取数据
                 }
 
             }
-            outErrorFiels = field + " -- 正则匹配失败   ";
-            return pattern;
+            if (field == "publish_date")
+            {
+                outErrorFiels = null;
+                return DateTime.Now.ToString("yyyy-MM-dd");
+            }
+            else
+            {
+                outErrorFiels = field + " -- 正则匹配失败   ";
+                return pattern;
+            }
+         
         }
     }
 }

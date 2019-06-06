@@ -18,8 +18,15 @@ namespace 控制台程序获取数据
             try
             {
                 HttpWebRequest request = WebRequest.Create(url) as HttpWebRequest;
-                InitHttpWebRequestHeaders(request);
+               //InitHttpWebRequestHeaders(request);
                 request.Method = "GET";
+                request.Headers.Add("UserAgent","PostmanRuntime/7.13.0");
+                request.Headers.Add("Accept", "*/*");
+                request.Headers.Add("CacheControl", "no-cache");
+                request.Headers.Add("Connection", "keep-alive");
+                request.Headers.Add("AcceptEncoding", "gzip, deflate");
+                request.Headers.Add("Host","jsb.nea.gov.cn");
+
                 var html = ReadHtml(request, encode);
                 isException = false;
                 return html;
@@ -47,15 +54,16 @@ namespace 控制台程序获取数据
             return html;
         }
 
-        //备用没用到
+        
         public static void InitHttpWebRequestHeaders(HttpWebRequest request)
         {
             request.ContentType = contentType;
             request.Accept = accept;
             request.UserAgent = userAgent;
+    
         }
 
-        //备用没用到
+
         public static String ReadHtml(HttpWebRequest request, String encode)
         {
             HttpWebResponse response = request.GetResponse() as HttpWebResponse;

@@ -28,6 +28,8 @@ namespace 控制台程序获取数据
         //程序主函数：程序开始到程序结束
         static void Main(string[] args)
         {
+            //string a=test.Get("http://jsb.nea.gov.cn/newssearch.asp?Search=%E7%94%B5%E7%BD%91&page=10", "gb2312", out _);
+
             if (runModel == "debug")
             {
                 ExecuteDebugByID();
@@ -68,6 +70,7 @@ namespace 控制台程序获取数据
 
         }
 
+        
         /// <summary>
         /// 调试采集列表和信息的总入口点
         /// </summary>
@@ -288,7 +291,7 @@ namespace 控制台程序获取数据
             //不是通用的采集网址，先首页采集
             if (!isGenericGatherUrl)
             {
-                Console.WriteLine("sourceID: " + sourceID.ToString() + "\t\t pages:-1" + "\t\t 关键字:" + seqNo.ToString() + " - " + UrlDecode(keyword));
+                Console.WriteLine("sourceID: " + sourceID.ToString() + "\t\t pages:-1" + "\t\t 关键字:" + seqNo.ToString() + " - " + UrlDecode(keyword) + "\n\r\t\t" + url);
                 GetListOnly(dt, classID, listOpcID, provinceID, sourceID, seqNo, keyword, sourceUrl, listIsPost, listCharset, listPattern, firstPage - 1, infoUrl, urlPattern, listBegin, listEnd, infoPattern, infoCharset, infoRequestHeader, infoOpcID, gatherType, infoFixedFields, infoVarFields, infoParamsFields);
             }
 
@@ -297,7 +300,7 @@ namespace 控制台程序获取数据
             {
                 for (int m = firstPage; m <= totalPages; m++)
                 {
-                    Console.WriteLine("source_id: " + sourceID.ToString() + "\t\t pages:" + m.ToString() + "\t\t 关键字:" + seqNo.ToString() + " - " + UrlDecode(keyword));
+                    Console.WriteLine("source_id: " + sourceID.ToString() + "\t\t pages:" + m.ToString() + "\t\t 关键字:" + seqNo.ToString() + " - " + UrlDecode(keyword) + "\n\r\t\t" + url.Replace("$pageno", m.ToString()));
                     GetListOnly(dt, classID, listOpcID, provinceID, sourceID, seqNo, keyword, url.Replace("$pageno", firstPage.ToString()), listIsPost, listCharset, listPattern, m, infoUrl, urlPattern, listBegin, listEnd, infoPattern, infoCharset, infoRequestHeader, infoOpcID, gatherType, infoFixedFields, infoVarFields, infoParamsFields);
                 }
 
@@ -307,7 +310,7 @@ namespace 控制台程序获取数据
 
                 for (int m = firstPage; m < firstPage + gatherPages; m += firstPageRatio)
                 {
-                    Console.WriteLine("sourceID: " + sourceID.ToString() + "\t\t pages:" + m.ToString() + "\t\t 关键字:" + seqNo.ToString() + " - " + UrlDecode(keyword));
+                    Console.WriteLine("sourceID: " + sourceID.ToString() + "\t\t pages:" + m.ToString() + "\t\t 关键字:" + seqNo.ToString() + " - " + UrlDecode(keyword)+ "\n\r\t\t" + url.Replace("$pageno", m.ToString()));
                     GetListOnly(dt, classID, listOpcID, provinceID, sourceID, seqNo, keyword, url.Replace("$pageno", m.ToString()), listIsPost, listCharset, listPattern, m, infoUrl, urlPattern, listBegin, listEnd, infoPattern, infoCharset, infoRequestHeader, infoOpcID, gatherType, infoFixedFields, infoVarFields, infoParamsFields);
                 }
 
@@ -326,7 +329,7 @@ namespace 控制台程序获取数据
             string p1; string response; bool isException;
             for (int i = 0; i < dt.Rows.Count; i++)
             {
-                Console.WriteLine("\t 正在采集... "+dt.Rows[i]["info_url"].ToString());
+                Console.WriteLine("\t 正在采集... id:" + dt.Rows[i]["id"].ToString() +"\t"+ dt.Rows[i]["info_url"].ToString());
                 response = GetData(dt.Rows[i]["info_url"].ToString(), dt.Rows[i]["info_charset"].ToString(), out isException);
 
                 //访问URL正常返回数据
@@ -819,7 +822,6 @@ namespace 控制台程序获取数据
 
 
         }
-
 
         /// <summary>
         /// 处理空白符和后台源代码中的空格

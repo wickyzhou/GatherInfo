@@ -14,6 +14,7 @@ using System.Security.Cryptography.X509Certificates;
 using System.Diagnostics;
 using System.Configuration;
 using System.Web;
+using System.Threading;
 
 namespace 控制台程序获取数据
 {
@@ -29,6 +30,7 @@ namespace 控制台程序获取数据
         static void Main(string[] args)
         {
             //string a=test.Get("http://jsb.nea.gov.cn/newssearch.asp?Search=%E7%94%B5%E7%BD%91&page=10", "gb2312", out _);
+            //string ss = GetData("http://www.nmbgp.com/col.jsp?id=107&m315pageno=2","gb2312",out _);
 
             if (runModel == "debug")
             {
@@ -149,8 +151,18 @@ namespace 控制台程序获取数据
                     string listP1 = ds.Tables[i].Rows[j]["list_p1"].ToString() == "-" ? "" : ds.Tables[i].Rows[j]["list_p1"].ToString();  //列表中变化参数1，同$pageno，
                     string listP2 = ds.Tables[i].Rows[j]["list_p2"].ToString() == "-" ? "" : ds.Tables[i].Rows[j]["list_p2"].ToString();  //列表中变化参数2，同$pageno，
                     string paramResidual = ds.Tables[i].Rows[j]["param_residual"].ToString() == "-" ? "" : ds.Tables[i].Rows[j]["param_residual"].ToString();//列表固定后缀参数
+
+                    string listCharset = ds.Tables[i].Rows[j]["list_charset"].ToString();//列表页面字符集
+
                     string keywords = ds.Tables[i].Columns.Contains("keywords") ? ds.Tables[i].Rows[j]["keywords"].ToString() : "1";//关键字采集源列表-关键字字段（逗号分隔用来识别是不是整个采集源所有关键字已采集结束）
-                    string keyword = ds.Tables[i].Columns.Contains("keyword") ? UrlEncode(ds.Tables[i].Rows[j]["keyword"].ToString()) : "";//关键字采集源列表-拆分后单个关键字（用来循环采集）
+                    string keyword = ds.Tables[i].Columns.Contains("keyword") ? UrlEncode(ds.Tables[i].Rows[j]["keyword"].ToString(), Encoding.GetEncoding(listCharset)): "";//关键字采集源列表-拆分后单个关键字（用来循环采集）
+                    //此网站搜索关键做了一个编码转换，完善此功能没什么意义，直接用特例处理
+                    if (sourceID == 100077)//GBK编码
+                    {   //处罚 、 国网、 电力、 电网
+                        keyword =keyword
+                                .Replace("%e5%a4%84%e7%bd%9a", "5aSE572a").Replace("%e5%9b%bd%e7%bd%91", "5Zu9572R").Replace("%e7%94%b5%e5%8a%9b", "55S15Yqb").Replace("%e7%94%b5%e7%bd%91", "55S1572R")//utf-8
+                                .Replace("%b4%a6%b7%a3", "5aSE572a").Replace("%b9%fa%cd%f8", "5Zu9572R").Replace("%b5%e7%c1%a6", "55S15Yqb").Replace("%b5%e7%cd%f8", "55S1572R"); //gbk、gb2312
+                    }
                     int seqNo = ds.Tables[i].Columns.Contains("seq_no") ? int.Parse(ds.Tables[i].Rows[j]["seq_no"].ToString()) : 1;         //关键字采集源列表序号
                     string url = gatherUrl.Replace("$param1", GetTranslationStringDate(listP1)).Replace("$param2", GetTranslationStringDate(listP2)).Replace("$kw", keyword);//动态参数格式
                     url += paramResidual;//包含页面变量用来循环地址
@@ -168,7 +180,7 @@ namespace 控制台程序获取数据
                     bool isGatherAllPages = (bool)ds.Tables[i].Rows[j]["is_gather_all_pages"];//是否采集所有页面
                     bool isGenericGatherUrl = (bool)ds.Tables[i].Rows[j]["is_generic_gather_url"];//是否采集所有页面
                     string listPattern = ds.Tables[i].Rows[j]["list_pattern"].ToString().Replace("单引号", @"'").Replace("双引号", @"""").Replace("斜杠", @"\");//列表页面正则
-                    string listCharset = ds.Tables[i].Rows[j]["list_charset"].ToString();//列表页面字符集
+                   
                     bool listIsPost = (bool)ds.Tables[i].Rows[j]["list_ispost"];//是否采集所有页面
                     int gatherType = int.Parse(ds.Tables[i].Rows[j]["gather_type"].ToString()); //采集类型 0：仅列表采集  1：采集信息页面（可单独GET采集，不需要cookies等）2：采集信息页面（必须连续采集）
                     string infoPattern = ds.Tables[i].Rows[j]["info_pattern"].ToString();
@@ -182,8 +194,7 @@ namespace 控制台程序获取数据
 
                     //每次都要根据正则来重建DT
                     dtList = CreateDatatableList(listPattern);
-
-                    
+   
      
                     GatherList(dtList, sourceID, listOpcID, provinceID, classID, sourceUrl, keyword, seqNo, url, infoURL, urlPattern, listBegin, listEnd, firstPageRatio, firstPage, gatherPages, totalPages, isGatherAllPages, isGenericGatherUrl, listPattern, listCharset, listIsPost, infoPattern, infoCharset, infoRequestHeader, infoOpcID, gatherType, infoFixedFields, infoVarFields, infoParamsFields);
 
@@ -199,7 +210,7 @@ namespace 控制台程序获取数据
                         }
                         else
                         {
-                            Console.WriteLine("\t没有数据更新");
+                            Console.WriteLine("\t没有最新的网址链接，或是没有列表list_pattern获取链接正则错误\n\n");
                         }
                     }
                     
@@ -291,7 +302,7 @@ namespace 控制台程序获取数据
             //不是通用的采集网址，先首页采集
             if (!isGenericGatherUrl)
             {
-                Console.WriteLine("sourceID: " + sourceID.ToString() + "\t\t pages:-1" + "\t\t 关键字:" + seqNo.ToString() + " - " + UrlDecode(keyword) + "\n\r\t\t" + url);
+                Console.WriteLine("sourceID: " + sourceID.ToString() + "\t\t pages:-1" + "\t\t 关键字:" + seqNo.ToString() + " - " + UrlDecode(keyword,Encoding.GetEncoding(listCharset)) + "\n\r\t\t" + url);
                 GetListOnly(dt, classID, listOpcID, provinceID, sourceID, seqNo, keyword, sourceUrl, listIsPost, listCharset, listPattern, firstPage - 1, infoUrl, urlPattern, listBegin, listEnd, infoPattern, infoCharset, infoRequestHeader, infoOpcID, gatherType, infoFixedFields, infoVarFields, infoParamsFields);
             }
 
@@ -300,7 +311,7 @@ namespace 控制台程序获取数据
             {
                 for (int m = firstPage; m <= totalPages; m++)
                 {
-                    Console.WriteLine("source_id: " + sourceID.ToString() + "\t\t pages:" + m.ToString() + "\t\t 关键字:" + seqNo.ToString() + " - " + UrlDecode(keyword) + "\n\r\t\t" + url.Replace("$pageno", m.ToString()));
+                    Console.WriteLine("source_id: " + sourceID.ToString() + "\t\t pages:" + m.ToString() + "\t\t 关键字:" + seqNo.ToString() + " - " + UrlDecode(keyword, Encoding.GetEncoding(listCharset)) + "\n\r\t\t" + url.Replace("$pageno", m.ToString()));
                     GetListOnly(dt, classID, listOpcID, provinceID, sourceID, seqNo, keyword, url.Replace("$pageno", firstPage.ToString()), listIsPost, listCharset, listPattern, m, infoUrl, urlPattern, listBegin, listEnd, infoPattern, infoCharset, infoRequestHeader, infoOpcID, gatherType, infoFixedFields, infoVarFields, infoParamsFields);
                 }
 
@@ -310,7 +321,7 @@ namespace 控制台程序获取数据
 
                 for (int m = firstPage; m < firstPage + gatherPages; m += firstPageRatio)
                 {
-                    Console.WriteLine("sourceID: " + sourceID.ToString() + "\t\t pages:" + m.ToString() + "\t\t 关键字:" + seqNo.ToString() + " - " + UrlDecode(keyword)+ "\n\r\t\t" + url.Replace("$pageno", m.ToString()));
+                    Console.WriteLine("sourceID: " + sourceID.ToString() + "\t\t pages:" + m.ToString() + "\t\t 关键字:" + seqNo.ToString() + " - " + UrlDecode(keyword, Encoding.GetEncoding(listCharset)) + "\n\r\t\t" + url.Replace("$pageno", m.ToString()));
                     GetListOnly(dt, classID, listOpcID, provinceID, sourceID, seqNo, keyword, url.Replace("$pageno", m.ToString()), listIsPost, listCharset, listPattern, m, infoUrl, urlPattern, listBegin, listEnd, infoPattern, infoCharset, infoRequestHeader, infoOpcID, gatherType, infoFixedFields, infoVarFields, infoParamsFields);
                 }
 
@@ -386,11 +397,11 @@ namespace 控制台程序获取数据
                         dt.Columns.Add(dc);
                     }
                 }
-                //没有发布日期，正则就不会生成此列，导致后面赋值判断异常
-                if (!dt.Columns.Contains("publish_date"))
-                {
-                    dt.Columns.Add("publish_date");
-                }
+                //没有发布日期，正则就不会生成此列，导致后面赋值判断异常, 没有时间就没有了，赋值的时候，判定dt是否存在, info_title也是这样处理
+                //if (!dt.Columns.Contains("publish_date"))
+                //{
+                //    dt.Columns.Add("publish_date");
+                //}
 
                 //添加url列
                 if (!dt.Columns.Contains("url"))
@@ -398,10 +409,10 @@ namespace 控制台程序获取数据
                     dt.Columns.Add("url");
                 }
                 //添加标题列列
-                if (!dt.Columns.Contains("info_title"))
-                {
-                    dt.Columns.Add("info_title");
-                }
+                //if (!dt.Columns.Contains("info_title"))
+                //{
+                //    dt.Columns.Add("info_title");
+                //}
 
                 //除了正则列和必须的列以外，列表固定列
                 dt.Columns.Add("source_id");
@@ -492,7 +503,7 @@ namespace 控制台程序获取数据
                 myRequest.Method = "POST";
                 //myRequest.ContentType = "application/x-www-form-urlencoded;"+charsetparam;
                 myRequest.ContentType = "application/x-www-form-urlencoded";
-
+                myRequest.UserAgent = "Mozilla/5.0 (Windows NT 6.3; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/34.0.1847.116 Safari/537.36";
                 myRequest.ContentLength = data.Length;
                 //myRequest.CookieContainer = new CookieContainer();
 
@@ -583,9 +594,6 @@ namespace 控制台程序获取数据
                 isException = true;
                 return e.Message.ToString();
             }
-
-
-
         }
 
         //不太清楚干嘛的，百度上的
@@ -613,7 +621,12 @@ namespace 控制台程序获取数据
         {
 
             #region 1.采集过程
-
+            //直接获取会没有响应，先睡个5秒钟
+            if (sourceID == 100053)
+            {
+                Thread.Sleep(5000);
+                Console.WriteLine("\t\t\t强制休眠5秒...");
+            }
             //采集开始时间
             string gatherBT = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
 
@@ -667,11 +680,17 @@ namespace 控制台程序获取数据
                                 dr[j - 1] = gc[j];
                             }
                             //清理标题格式
-                            dr["info_title"] = DealWithTitle(dr["info_title"].ToString());
-
-
+                            if (dt.Columns.Contains("info_title"))
+                            {
+                                dr["info_title"] = DealWithTitle(dr["info_title"].ToString());
+                            }
+                           
                             //防止日期采集出问题,
-                            dr["publish_date"] = DealWithPublishDate(dr["publish_date"].ToString(), url);
+                            if (dt.Columns.Contains("publish_date"))
+                            {
+                                dr["publish_date"] = DealWithPublishDate(dr["publish_date"].ToString(), url);
+                            }
+                          
 
                             //处理特殊的网址格式
                             bool isDealed = false;
@@ -687,7 +706,7 @@ namespace 控制台程序获取数据
                             dr["list_opc_id"] = listOpcID.ToString();
                             dr["info_opc_id"] = infoOpcID.ToString();
                             dr["province_id"] = provinceID.ToString();
-                            dr["keyword"] = UrlDecode(keyword);
+                            dr["keyword"] = UrlDecode(keyword, Encoding.GetEncoding(listCharset));
                             dr["seq_no"] = seqNo.ToString();
                             dr["info_pattern"] = infoPattern;
                             dr["info_charset"] = infoCharset;
@@ -717,11 +736,11 @@ namespace 控制台程序获取数据
 
             #region 3.将采集日志写入到数据库表
             int cnt = 1;
-            int ok = DAL.WriteLog(classID, sourceID, seqNo, UrlDecode(keyword), pageNo, isRegMatch, isException, response, listPattern, gatherBT, gatherET, gatherRows);
+            int ok = DAL.WriteLog(classID, sourceID, seqNo, UrlDecode(keyword, Encoding.GetEncoding(listCharset)), pageNo, isRegMatch, isException, response, listPattern, gatherBT, gatherET, gatherRows);
             while (ok != 1 && cnt < 3)
             {
                 Console.WriteLine($" 第{cnt}次 重试写入采集日志表...");
-                ok = DAL.WriteLog(classID, sourceID, seqNo, UrlDecode(keyword), pageNo, isRegMatch, isException, response, listPattern, gatherBT, gatherET, gatherRows);
+                ok = DAL.WriteLog(classID, sourceID, seqNo, UrlDecode(keyword, Encoding.GetEncoding(listCharset)), pageNo, isRegMatch, isException, response, listPattern, gatherBT, gatherET, gatherRows);
                 cnt++;
             }
             #endregion
@@ -805,10 +824,15 @@ namespace 控制台程序获取数据
         private static string DealwithResponse(string content)
         {
             string result = null;
-            content = content.Replace("\t", "").Replace("\r", "").Replace("\n", "").Replace("&nbsp;", "");
+            content = content.Replace(@"\t","").Replace(@"\n", "").Replace(@"\r", "").Replace("\t", "").Replace("\r", "").Replace("\n", "").Replace("&nbsp;", "");
 
             //将内容中的脚本去除
-            content = Regex.Replace(Regex.Replace(Regex.Replace(Regex.Replace(content, @"<script.*?</.*?script.*?>", ""), @"replace.*?\(.*?\)", ""), "var.*?/.*?/", ""), "<!--.*?-->", "");
+            content = Regex.Replace(Regex.Replace(Regex.Replace(Regex.Replace(Regex.Replace(content
+                , @"<script.*?</.*?script.*?>", "", RegexOptions.IgnoreCase)
+                , @"replace.*?\(.*?\)", "", RegexOptions.IgnoreCase)
+                , "var.*?/.*?/", "", RegexOptions.IgnoreCase)
+                , "<!--.*?-->", "", RegexOptions.IgnoreCase)
+                , "<style.*?</.*?style.*?>", "",RegexOptions.IgnoreCase);
             try
             {
                 //将Unicode标识\U6278 转换为中文
@@ -934,8 +958,6 @@ namespace 控制台程序获取数据
                 for (int i = 0; i < result.Length - cnt - 1; i++)
                 {
                     domain += result[i] + "/";
-
-
                 }
                 isDealed = true;
                 return domain + url.Replace("../", "");
@@ -1089,9 +1111,9 @@ namespace 控制台程序获取数据
         /// </summary>
         /// <param name="keyword"></param>
         /// <returns></returns>
-        private static string UrlEncode(string keyword)
+        private static string UrlEncode(string keyword, Encoding charset)
         {
-            return HttpUtility.UrlEncode(keyword);
+            return HttpUtility.UrlEncode(keyword, charset);
         }
 
         /// <summary>
@@ -1099,9 +1121,9 @@ namespace 控制台程序获取数据
         /// </summary>
         /// <param name="keyword"></param>
         /// <returns></returns>
-        private static string UrlDecode(string keyword)
+        private static string UrlDecode(string keyword, Encoding charset)
         {
-            return HttpUtility.UrlDecode(keyword);
+            return HttpUtility.UrlDecode(keyword,charset);
 
         }
 

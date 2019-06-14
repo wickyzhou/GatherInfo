@@ -50,6 +50,7 @@ namespace 控制台程序获取数据
             var outstream = request.GetRequestStream();
             outstream.Write(data, 0, data.Length);
             var html = ReadHtml(request, encode);
+            
             return html;
         }
 
@@ -72,6 +73,7 @@ namespace 控制台程序获取数据
             reader.Close();
             stream.Close();
             return content;
+           
         }
 
         //备用没用到

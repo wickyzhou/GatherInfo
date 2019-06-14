@@ -15,6 +15,8 @@ using System.Diagnostics;
 using System.Configuration;
 using System.Web;
 using System.Threading;
+using System.Net.Cache;
+using Newtonsoft.Json;
 
 namespace 控制台程序获取数据
 {
@@ -29,9 +31,6 @@ namespace 控制台程序获取数据
         //程序主函数：程序开始到程序结束
         static void Main(string[] args)
         {
-            //string a=test.Get("http://jsb.nea.gov.cn/newssearch.asp?Search=%E7%94%B5%E7%BD%91&page=10", "gb2312", out _);
-            //string ss = GetData("http://www.nmbgp.com/col.jsp?id=107&m315pageno=2","gb2312",out _);
-
             if (runModel == "debug")
             {
                 ExecuteDebugByID();
@@ -482,29 +481,45 @@ namespace 控制台程序获取数据
         /// <summary>
         /// POST方式获取网址响应
         /// </summary>
-        /// <param name="sourceurl"></param>
+        /// <param name="gatherUrl"></param>
         /// <param name="charset"></param>
         /// <param name="isException"></param>
         /// <returns></returns>
-        private static string PostData(string sourceurl, string charset, out bool isException)
+        private static string PostData(string gatherUrl, string charset, out bool isException,string contentType= "application/x-www-form-urlencoded")
         {
             try
             {
-                //数据库网址URL以？号分割, POSTformdata里面也有|，因此不能用split
-                string postData = sourceurl.Split(new char[] { '|' }, 2)[1];
-                string url = sourceurl.Split(new char[] { '|' }, 2)[0];
+                //payload和formdata请求的格式不一样，不想格外做参数，就用||代表payload,|代表formdata
+                if (gatherUrl.Contains("||"))
+                {
+                    gatherUrl = gatherUrl.Replace("||", "|");
+                    contentType = "application/json";
+                }
+
+                //数据库网址URL以？号分割, POSTformdata里面也有|，因此不能用split,用最多拆分成2部分的重载
+                string postData = gatherUrl.Split(new char[] { '|' }, 2)[1];
+                string url = gatherUrl.Split(new char[] { '|' }, 2)[0];
 
                 ASCIIEncoding encoding = new ASCIIEncoding();
                 byte[] data = encoding.GetBytes(postData);
-
+               
                 //byte[] data = Encoding.Unicode.GetBytes(postData);
                 HttpWebRequest myRequest = (HttpWebRequest)WebRequest.Create(url);
                 myRequest.Timeout = 20000;
                 myRequest.Method = "POST";
-                //myRequest.ContentType = "application/x-www-form-urlencoded;"+charsetparam;
-                myRequest.ContentType = "application/x-www-form-urlencoded";
+
+                //myRequest.ContentType = "application/x-www-form-urlencoded";  post 默认formdata是这种格式请求
+                //myRequest.ContentType = "application/json";  如果是payload格式的话，就需要将指定格式设置为Json
+                
+                myRequest.ContentType = contentType;
+               
+
                 myRequest.UserAgent = "Mozilla/5.0 (Windows NT 6.3; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/34.0.1847.116 Safari/537.36";
-                myRequest.ContentLength = data.Length;
+                //myRequest.ContentLength = data.Length; 基础连接失败，取消
+                
+                //强制取消缓存，同浏览器Disable Cache
+                HttpRequestCachePolicy noCachePolicy = new HttpRequestCachePolicy(HttpRequestCacheLevel.NoCacheNoStore);
+                myRequest.CachePolicy = noCachePolicy;
                 //myRequest.CookieContainer = new CookieContainer();
 
                 Stream newStream = myRequest.GetRequestStream();
@@ -565,6 +580,11 @@ namespace 控制台程序获取数据
                 HttpWebRequest myRequest = (HttpWebRequest)WebRequest.Create(url);
                 myRequest.Timeout = 20000;
                 myRequest.Method = "GET";
+                myRequest.UserAgent = "Mozilla/5.0 (Windows NT 6.3; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/34.0.1847.116 Safari/537.36";
+                //强制取消缓存，同浏览器Disable Cache
+                HttpRequestCachePolicy noCachePolicy = new HttpRequestCachePolicy(HttpRequestCacheLevel.NoCacheNoStore);
+                myRequest.CachePolicy = noCachePolicy;
+
                 HttpWebResponse myResponse = null;
                 try
                 {
@@ -762,6 +782,7 @@ namespace 控制台程序获取数据
                 case "yyyy-01-01": _result = DateTime.Now.Year.ToString() + "-01-01"; break;
                 case "now-yyyy-mm-dd": _result = DateTime.Now.ToString("yyyy-MM-dd"); break;
                 case "now-yyyy-mm-dd-lastmonth": _result = DateTime.Now.AddMonths(-1).ToString("yyyy-MM-dd"); break;
+                case "now-yyyy-mm-dd-tomorrow": _result = DateTime.Now.AddDays(1).ToString("yyyy-MM-dd"); break;
                 default:
                     break;
             }
@@ -900,7 +921,7 @@ namespace 控制台程序获取数据
         private static string DealWithPublishDate(string publishDate, string url)
         {
             //清空发布日期中的标签
-            string _publishDate = Regex.Replace(Regex.Replace(publishDate, "<a.*?</a>", ""), "<.*?>", "").Replace("年", "-").Replace("月", "-").Replace("日", "");
+            string _publishDate = Regex.Replace(Regex.Replace(publishDate, "<a.*?</a>", ""), "<.*?>", "").Replace("年", "-").Replace("月", "-").Replace("日", "").Replace("[", "").Replace("]", "").Replace("【", "").Replace("】", "");
             DateTime _result;
             if (_publishDate.Length == 0) //如果为空，则设置为明天
             {

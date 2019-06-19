@@ -1,14 +1,8 @@
-﻿using System;
-using System.Collections;
-using System.Collections.Generic;
-using System.Linq;
-using System.Net;
-using System.Text;
-
+﻿
 namespace 控制台程序获取数据
 {
     class laji
-    {
+    {/*
         private  string CookieContainerToString(CookieContainer cc)
         {
             StringBuilder sbc = new StringBuilder();
@@ -40,5 +34,19 @@ namespace 控制台程序获取数据
 
             return lstCookies;
         }
+
+
+        private static string ConvertToMD5String(String argString)
+        {
+            MD5 md5 = new MD5CryptoServiceProvider();
+            byte[] data = System.Text.Encoding.Default.GetBytes(argString);
+            byte[] result = md5.ComputeHash(data);
+            String strReturn = String.Empty;
+            for (int i = 0; i < result.Length; i++)
+                strReturn += result[i].ToString("x").PadLeft(2, '0');
+            return strReturn;
+        }
+    }
+    */
     }
 }

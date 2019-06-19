@@ -67,7 +67,7 @@ namespace 控制台程序获取数据
             }
             catch (Exception ex)
             {
-                return null;
+                throw new Exception(ex.Message.ToString());
             }
            
         }
@@ -97,7 +97,7 @@ namespace 控制台程序获取数据
             }
             catch (Exception ex)
             {
-                return null;
+                throw new Exception(ex.Message.ToString());
             }
 
         }

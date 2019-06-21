@@ -76,7 +76,6 @@ namespace 控制台程序获取数据
                     Console.ReadKey();
                 }
             }
-
         }
 
         /// <summary>
@@ -198,13 +197,10 @@ namespace 控制台程序获取数据
                     string listRequestHeaders = ds.Tables[i].Rows[j]["list_request_headers"].ToString();
                     string infoRequestHeaders = ds.Tables[i].Rows[j]["info_request_headers"].ToString();
                     #endregion
-
                     //每次都要根据正则来重建DT
                     dtList = CreateDatatableList(listPattern);
-
-
                     GatherList(dtList, sourceID, listOpcID, provinceID, classID, sourceUrl, keyword, seqNo, url, infoURL, urlPattern, listBegin, listEnd, firstPageRatio, firstPage, gatherPages, totalPages, isGatherAllPages, isGenericGatherUrl, listPattern, listCharset, listIsPost, infoPattern, infoCharset, infoRequestHeader, infoOpcID, gatherType, infoFixedFields, infoVarFields, infoParamsFields, listRequestHeaders);
-
+                    continue;
                     //0:仅列表采集  1：采集信息到Waiting信息表（通过改变配置 "release"=>releaseConfig="120" 或"debug"=> 输入待采信息ID 执行采集）  2：采集完列表后立即采集信息
                     if (gatherType == 2 && keywords.Split('|').Length == seqNo)
                     {
@@ -220,12 +216,10 @@ namespace 控制台程序获取数据
                             Console.WriteLine("\t没有最新的网址链接，或是没有列表list_pattern获取链接正则错误\n\n");
                         }
                     }
-
                     if (gatherType != 2)
                     {
                         listCount++;
                     }
-
                     //重置列表容器，针对每个采集源listPattern定义不同结构的DT
                     dtList = null;
                 }
@@ -235,7 +229,6 @@ namespace 控制台程序获取数据
                 SyncModelTable("pr_sync_gather_list_model");
             }
             Console.WriteLine("\n\n------------- 本批次列表同步全部完成 ----------------");
-
         }
 
         /// <summary>
@@ -306,13 +299,14 @@ namespace 控制台程序获取数据
         /// <param name="infoParamsFields"></param>
         private static void GatherList(DataTable dt, int sourceID, int listOpcID, int provinceID, int classID, string sourceUrl, string keyword, int seqNo, string gatherUrl, string infoUrl, string urlPattern, string listBegin, string listEnd, int firstPageRatio, int firstPage, int gatherPages, int totalPages, bool isGatherAllPages, bool isGenericGatherUrl, string listPattern, string listCharset, bool listIsPost, string infoPattern, string infoCharset, string infoRequestHeader, int infoOpcID, int gatherType, string infoFixedFields, string infoVarFields, string infoParamsFields, string listRequestHeaders)
         {
-            //获取整个采集源的cookie
+            //获取整个采集源的cookie以及动态参数？？？暂时不用
             string cookie = string.Empty;
+            string dynamicParams = string.Empty;
             //获取cookies
             cookie = GetCookieBySourceUrl(sourceUrl, listRequestHeaders);
-
-
-
+            //插入到数据库
+            DAL.ExcuteNonQuery(" insert into temp_h1 values ( " + sourceID.ToString() + cookie + ")");
+            return;
             //不是通用的采集网址，先首页采集
             if (!isGenericGatherUrl)
             {
@@ -667,7 +661,7 @@ namespace 控制台程序获取数据
             if (sourceID == 100053)
             {
                 Thread.Sleep(5000);
-                Console.WriteLine("\t\t\t强制休眠5秒...");
+                Console.WriteLine("\t\t\t连续访问响应为空，强制休眠5秒...");
             }
             //采集开始时间
             string gatherBT = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
@@ -875,8 +869,10 @@ namespace 控制台程序获取数据
         {
             //Regex rg = new Regex(listbegin + @"(.*?)" + listend);
             //return rg.Match(content).Groups[1].ToString();
-            Regex rg = new Regex(listbegin + ".*?" + listend);
-            return rg.Match(content).ToString();
+
+            //Regex rg = new Regex(listbegin + ".*?" + listend);
+            //return rg.Match(content).ToString();
+            return Regex.Match(content, listbegin + "(.*?)" + listend, RegexOptions.IgnoreCase).Groups[1].Value;
         }
 
         /// <summary>
@@ -974,7 +970,7 @@ namespace 控制台程序获取数据
         private static string DealWithPublishDate(string publishDate, string url)
         {
             //清空发布日期中的标签
-            string _publishDate = Regex.Replace(Regex.Replace(publishDate, "<a.*?</a>", ""), "<.*?>", "")
+            string _publishDate = Regex.Replace(Regex.Replace(publishDate, "<a.*?</a>", "",RegexOptions.IgnoreCase), "<.*?>", "")
                                         .Replace("年", "-").Replace("月", "-").Replace("日", "")
                                          .Replace("[", "").Replace("]", "").Replace("【", "").Replace("】", "")
                                          .Replace("（", "").Replace("(", "").Replace("）", "").Replace(")", "");
@@ -1513,7 +1509,21 @@ namespace 控制台程序获取数据
                         throw new Exception("首页访问失败", e);
                     }
                 }
-                return allCookies; 
+
+                //临时加的；
+                try
+                {
+                    StreamReader reader = new StreamReader(myResponse.GetResponseStream(), Encoding.GetEncoding("utf-8"));//乱码需要转码
+                    string content = reader.ReadToEnd();
+                    reader.Close();
+                    string r=Regex.Match(content, "newslist01(.*?)</ul", RegexOptions.IgnoreCase).Groups[1].Value;
+                    return Regex.Match(r, @"onedet\('(.*?)'", RegexOptions.IgnoreCase).Groups[1].Value;
+                }
+                catch
+                {
+
+                }
+                return allCookies;
             }
             else
             {

@@ -30,8 +30,7 @@ namespace 控制台程序获取数据
         static readonly string releaseConfig = ConfigurationManager.AppSettings["releaseConfig"];
         static readonly string runModel = ConfigurationManager.AppSettings["runModel"];
         static readonly int batchCount = int.Parse(ConfigurationManager.AppSettings["batchCount"]);
-        public static string cookiesHostHolderPost = string.Empty;
-        public static string cookiesHostHolderGet = string.Empty;
+        static HashSet<string> cookiesHostHolder = new HashSet<string>();
 
         /// <summary>
         /// 程序主函数：程序开始到程序结束
@@ -200,7 +199,7 @@ namespace 控制台程序获取数据
                     //每次都要根据正则来重建DT
                     dtList = CreateDatatableList(listPattern);
                     GatherList(dtList, sourceID, listOpcID, provinceID, classID, sourceUrl, keyword, seqNo, url, infoURL, urlPattern, listBegin, listEnd, firstPageRatio, firstPage, gatherPages, totalPages, isGatherAllPages, isGenericGatherUrl, listPattern, listCharset, listIsPost, infoPattern, infoCharset, infoRequestHeader, infoOpcID, gatherType, infoFixedFields, infoVarFields, infoParamsFields, listRequestHeaders);
-                    continue;
+                   
                     //0:仅列表采集  1：采集信息到Waiting信息表（通过改变配置 "release"=>releaseConfig="120" 或"debug"=> 输入待采信息ID 执行采集）  2：采集完列表后立即采集信息
                     if (gatherType == 2 && keywords.Split('|').Length == seqNo)
                     {
@@ -300,13 +299,9 @@ namespace 控制台程序获取数据
         private static void GatherList(DataTable dt, int sourceID, int listOpcID, int provinceID, int classID, string sourceUrl, string keyword, int seqNo, string gatherUrl, string infoUrl, string urlPattern, string listBegin, string listEnd, int firstPageRatio, int firstPage, int gatherPages, int totalPages, bool isGatherAllPages, bool isGenericGatherUrl, string listPattern, string listCharset, bool listIsPost, string infoPattern, string infoCharset, string infoRequestHeader, int infoOpcID, int gatherType, string infoFixedFields, string infoVarFields, string infoParamsFields, string listRequestHeaders)
         {
             //获取整个采集源的cookie以及动态参数？？？暂时不用
-            string cookie = string.Empty;
-            string dynamicParams = string.Empty;
-            //获取cookies
+            CookieContainer cookie = new CookieContainer();
             cookie = GetCookieBySourceUrl(sourceUrl, listRequestHeaders);
-            //插入到数据库
-            DAL.ExcuteNonQuery(" insert into temp_h1 values ( " + sourceID.ToString() + cookie + ")");
-            return;
+
             //不是通用的采集网址，先首页采集
             if (!isGenericGatherUrl)
             {
@@ -478,8 +473,10 @@ namespace 控制台程序获取数据
         /// <param name="charset"></param>
         /// <param name="isException"></param>
         /// <returns></returns>
-        private static string PostData(string gatherUrl, string charset, string requestHeaders, out bool isException, string newCookie = "")
+        private static string PostData(string gatherUrl, string charset, string requestHeaders, out bool isException, CookieContainer newCookie = null)
         {
+            HttpWebRequest myRequest=null;
+            HttpWebResponse myResponse = null;
             try
             {
                 //CookieContainer cc = new CookieContainer();
@@ -489,18 +486,23 @@ namespace 控制台程序获取数据
 
                 ASCIIEncoding encoding = new ASCIIEncoding();
                 byte[] data = encoding.GetBytes(postData);
-                System.GC.Collect();
                 //byte[] data = Encoding.Unicode.GetBytes(postData);
-                HttpWebRequest myRequest = (HttpWebRequest)WebRequest.Create(url);
+
+                System.GC.Collect();//避免GetRequestStream()超时
+                myRequest = (HttpWebRequest)WebRequest.Create(url);
                 myRequest.Timeout = 20000;
                 myRequest.Method = "POST";
                 //强制取消缓存，同浏览器Disable Cache
                 HttpRequestCachePolicy noCachePolicy = new HttpRequestCachePolicy(HttpRequestCacheLevel.NoCacheNoStore);
                 myRequest.CachePolicy = noCachePolicy;
                 myRequest.ServicePoint.Expect100Continue = false;//卡主不动无法提交
-                myRequest.AllowAutoRedirect = false;
+                //myRequest.AllowAutoRedirect = false; //用cookieContainer就必须运行重定向
                 myRequest.KeepAlive = false;//基础连接已经关闭: 服务器关闭了本应保持活动状态的连接。
+                myRequest.CookieContainer = newCookie ?? new CookieContainer();
                 AddRequestHeaders(myRequest, requestHeaders); //浏览器显示的requestHeaders里面有些是request属性，和headers平级的，只能用.ContentType来设置值。其余可以用headers.Add方法添加
+                myRequest.Proxy = null;
+                myRequest.UseDefaultCredentials = true;
+                ServicePointManager.DefaultConnectionLimit = 10;////多线程超时解决办法。对于前面多个request。其都是keepalive为true，以及多个response也没有close
                 if (myRequest.Headers["User-Agent"] == null)
                 {
                     myRequest.UserAgent = "Mozilla/5.0 (Windows NT 6.3; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/34.0.1847.116 Safari/537.36";
@@ -509,20 +511,17 @@ namespace 控制台程序获取数据
                 {
                     myRequest.ContentType = "application/x-www-form-urlencoded";
                 }
-                if (newCookie.Length > 0)
+                if (newCookie != null && newCookie.Count > 0)
                 {
-                    myRequest.Headers.Add("Cookie", newCookie);
+                    myRequest.Headers.Add("Cookie", CookieContainerToString(newCookie));
                 }
                 //常见的两种方式添加到headers，一次只能添加一行
                 //myRequest.Headers.Add("Cookie", "JSESSIONID=2X5BdGzLV5d1ZZygSvQWpQRHf8BJxsJprGp1chnMVffXCrWBgSnL!-1523611838");
                 //myRequest.Headers.Add(@"Pragma: no-cache");
                 //myRequest.ContentLength =-1; //基础连接失败，取消改值设置。
                 Stream newStream = myRequest.GetRequestStream();
-                //多线程超时解决办法
-                //System.Net.ServicePointManager.DefaultConnectionLimit = 50;
                 newStream.Write(data, 0, data.Length);
                 newStream.Close();
-                HttpWebResponse myResponse = null;
 
                 try
                 {
@@ -536,7 +535,10 @@ namespace 控制台程序获取数据
                     {
                         myResponse.Close();
                     }
-                    myRequest.Abort();
+                    if (myRequest != null)
+                    {
+                        myRequest.Abort();
+                    }
 
                     isException = false;
                     return content;
@@ -545,12 +547,15 @@ namespace 控制台程序获取数据
                 {
                     isException = true;
                     //取消访问，关闭响应，避免超时
-                    myRequest.Abort();
+                    //避免超时
                     if (myResponse != null)
                     {
                         myResponse.Close();
                     }
-
+                    if (myRequest != null)
+                    {
+                        myRequest.Abort();
+                    }
                     return ex.Message.ToString();
 
                 }
@@ -558,6 +563,15 @@ namespace 控制台程序获取数据
             }
             catch (Exception e)
             {
+                //避免超时
+                if (myResponse != null)
+                {
+                    myResponse.Close();
+                }
+                if (myRequest != null)
+                {
+                    myRequest.Abort();
+                }
                 isException = true;
                 return e.Message.ToString();
             }
@@ -571,47 +585,65 @@ namespace 控制台程序获取数据
         /// <param name="charset"></param>
         /// <param name="isException"></param>
         /// <returns></returns>
-        private static string GetData(string url, string charset, string requestHeaders, out bool isException, string newCookie = "")
+        private static string GetData(string url, string charset, string requestHeaders, out bool isException, CookieContainer newCookie = null)
         {
+            HttpWebRequest myRequest = null; HttpWebResponse myResponse = null;
             try
             {
                 Util.SetCertificatePolicy();//验证安全，未能为 SSL/TLS 安全通道建立信任关系
-                HttpWebRequest myRequest = (HttpWebRequest)WebRequest.Create(url);
+                System.GC.Collect();//避免GetRequestStream()超时
+                myRequest = (HttpWebRequest)WebRequest.Create(url);
                 myRequest.Timeout = 20000;
                 myRequest.Method = "GET";
                 //强制取消缓存，同浏览器Disable Cache
                 HttpRequestCachePolicy noCachePolicy = new HttpRequestCachePolicy(HttpRequestCacheLevel.NoCacheNoStore);
                 myRequest.CachePolicy = noCachePolicy;
                 myRequest.KeepAlive = false;//基础连接已经关闭: 服务器关闭了本应保持活动状态的连接。
-                myRequest.ServicePoint.Expect100Continue = false;//卡主不动无法提交
-                myRequest.AllowAutoRedirect = false;
+                //myRequest.ServicePoint.Expect100Continue = false;//卡主不动无法提交Post才需要
+                //myRequest.AllowAutoRedirect = true; 已经用了CookieContainer
+                myRequest.CookieContainer = newCookie ?? new CookieContainer();
                 AddRequestHeaders(myRequest, requestHeaders);
+                myRequest.Proxy = null;
+                myRequest.UseDefaultCredentials = true;
+                ServicePointManager.DefaultConnectionLimit = 10;////多线程超时解决办法。对于前面多个request。其都是keepalive为true，以及多个response也没有close
                 if (myRequest.Headers["User-Agent"] == null)
                 {
                     myRequest.UserAgent = "Mozilla/5.0 (Windows NT 6.3; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/34.0.1847.116 Safari/537.36";
                 }
-                if (newCookie.Length > 0)
+
+                if (newCookie != null && newCookie.Count > 0)
                 {
-                    myRequest.Headers.Add("Cookie", newCookie);
+                    myRequest.Headers.Add("Cookie", CookieContainerToString(newCookie));
                 }
-                HttpWebResponse myResponse = null;
+
+
                 try
                 {
                     myResponse = (HttpWebResponse)myRequest.GetResponse();
                     StreamReader reader = new StreamReader(myResponse.GetResponseStream(), Encoding.GetEncoding(charset));
                     string content = reader.ReadToEnd();
                     reader.Close();
-                    myResponse.Close();
                     isException = false;
+                    if (myResponse != null)
+                    {
+                        myResponse.Close();
+                    }
+                    if (myRequest != null)
+                    {
+                        myRequest.Abort();
+                    }
                     return content;
                 }
                 catch (Exception e)
                 {
-                    //取消访问，关闭响应，避免超时
-                    myRequest.Abort();
+                    //避免超时
                     if (myResponse != null)
                     {
                         myResponse.Close();
+                    }
+                    if (myRequest != null)
+                    {
+                        myRequest.Abort();
                     }
 
                     isException = true;
@@ -620,6 +652,15 @@ namespace 控制台程序获取数据
             }
             catch (Exception e)
             {
+                //避免超时
+                if (myResponse != null)
+                {
+                    myResponse.Close();
+                }
+                if (myRequest != null)
+                {
+                    myRequest.Abort();
+                }
                 isException = true;
                 return e.Message.ToString();
             }
@@ -653,7 +694,7 @@ namespace 控制台程序获取数据
         /// <param name="listBegin"></param>
         /// <param name="listEnd"></param>
         /// <returns></returns>
-        private static DataTable GetListOnly(DataTable dt, string cookie, int classID, int listOpcID, int provinceID, int sourceID, int seqNo, string keyword, string gatherUrl, bool listIsPost, string listCharset, string listPattern, int pageNo, string infoUrl, string urlPattern, string listBegin, string listEnd, string infoPattern, string infoCharset, string infoRequestHeader, int infoOpcID, int gatherType, string infoFixedFields, string infoVarFields, string infoParamsFields, string listRequestHeaders)
+        private static DataTable GetListOnly(DataTable dt, CookieContainer cookie, int classID, int listOpcID, int provinceID, int sourceID, int seqNo, string keyword, string gatherUrl, bool listIsPost, string listCharset, string listPattern, int pageNo, string infoUrl, string urlPattern, string listBegin, string listEnd, string infoPattern, string infoCharset, string infoRequestHeader, int infoOpcID, int gatherType, string infoFixedFields, string infoVarFields, string infoParamsFields, string listRequestHeaders)
         {
 
             #region 1.采集过程
@@ -755,7 +796,7 @@ namespace 控制台程序获取数据
                             }
 
                             //凭借为完整的可访问的网址
-                            dr["info_url"] = DealWithUrlDirectoryAndFormmater(sourceID, urlPattern,url,url1,url2,url3,url4,pd);
+                            dr["info_url"] = DealWithUrlDirectoryAndFormmater(sourceID, urlPattern, url, url1, url2, url3, url4, pd);
 
                             //固定必须有的数据（采集源）
                             dr["source_id"] = sourceID.ToString();
@@ -780,9 +821,8 @@ namespace 控制台程序获取数据
 
             //采集结束时间
             string gatherET = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
-
-
             #endregion
+
 
             #region 2.处理需要写入到数据库的数据格式
             //没有匹配到的情况下，将响应保存到数据库
@@ -823,39 +863,6 @@ namespace 控制台程序获取数据
                     break;
             }
             return _result;
-        }
-
-        /// <summary>
-        /// 根据获取列表cookie，获取具体信息页面响应（目前没有用）
-        /// </summary>
-        /// <param name="Url"></param>
-        /// <param name="postDataStr"></param>
-        /// <param name="cookie"></param>
-        /// <returns></returns>
-        private static string SendDataByGET(string Url, string postDataStr, ref CookieContainer cookie)
-        {
-            HttpWebRequest request = (HttpWebRequest)WebRequest.Create(Url + (postDataStr == "" ? "" : "?") + postDataStr);
-            if (cookie.Count == 0)
-            {
-                request.CookieContainer = new CookieContainer();
-                cookie = request.CookieContainer;
-            }
-            else
-            {
-                request.CookieContainer = cookie;
-            }
-
-            request.Method = "GET";
-            request.ContentType = "text/html;charset=UTF-8";
-
-            HttpWebResponse response = (HttpWebResponse)request.GetResponse();
-            Stream myResponseStream = response.GetResponseStream();
-            StreamReader myStreamReader = new StreamReader(myResponseStream, Encoding.GetEncoding("utf-8"));
-            string retString = myStreamReader.ReadToEnd();
-            myStreamReader.Close();
-            myResponseStream.Close();
-
-            return retString;
         }
 
         /// <summary>
@@ -970,7 +977,7 @@ namespace 控制台程序获取数据
         private static string DealWithPublishDate(string publishDate, string url)
         {
             //清空发布日期中的标签
-            string _publishDate = Regex.Replace(Regex.Replace(publishDate, "<a.*?</a>", "",RegexOptions.IgnoreCase), "<.*?>", "")
+            string _publishDate = Regex.Replace(Regex.Replace(publishDate, "<a.*?</a>", "", RegexOptions.IgnoreCase), "<.*?>", "")
                                         .Replace("年", "-").Replace("月", "-").Replace("日", "")
                                          .Replace("[", "").Replace("]", "").Replace("【", "").Replace("】", "")
                                          .Replace("（", "").Replace("(", "").Replace("）", "").Replace(")", "");
@@ -1034,13 +1041,13 @@ namespace 控制台程序获取数据
                     {
                         domain += result[i] + "/";
                     }
-                    CorrectUrl= domain + url.Replace("../", "");
+                    CorrectUrl = domain + url.Replace("../", "");
 
 
                 }
                 else //if (url.StartsWith("./"))
                 {
-                    CorrectUrl= urlpattern + url.Replace("./", "");
+                    CorrectUrl = urlpattern + url.Replace("./", "");
                 }
             }
             else if (urlpattern.IndexOf("$1") > -1)
@@ -1058,7 +1065,7 @@ namespace 控制台程序获取数据
             }
             else
             {
-                CorrectUrl = urlpattern.Replace("$url4", url4).Replace("$url3", url3).Replace("$url2", url2).Replace("$url1", url1).Replace("$url", url);      
+                CorrectUrl = urlpattern.Replace("$url4", url4).Replace("$url3", url3).Replace("$url2", url2).Replace("$url1", url1).Replace("$url", url);
             }
             return System.Web.HttpUtility.HtmlDecode(CorrectUrl);
         }
@@ -1363,173 +1370,153 @@ namespace 控制台程序获取数据
         /// </summary>
         /// <param name="cookieUrl"></param>
         /// <returns></returns>
-        private static string GetCookieBySourceUrl(string cookieUrl, string requestHeaders)
+        private static CookieContainer GetCookieBySourceUrl(string cookieUrl, string requestHeaders)
         {
-           
-            string ss1 = string.Empty;
-            string singleResponseCookie = string.Empty,allCookies = string.Empty;
-            string ss = string.Empty;
+            CookieContainer cc = new CookieContainer();
+            string cookiesstr = string.Empty;
+            string host = string.Empty;
             HttpWebRequest myRequest = null;
             HttpWebResponse myResponse = null;
             string gatherUrl;
-            if (cookieUrl.StartsWith("++"))
+            try
             {
-                //如果此主机已经获取过cookie了就直接返回
-                try
+                if (cookieUrl.StartsWith("++"))
                 {
-                    string host =cookieUrl.Split(new char[] { '+' }, StringSplitOptions.RemoveEmptyEntries)[0];
-                    if (cookiesHostHolderPost.Contains(host))
+                    try
                     {
-                        return "";
-                    }
-                    else
-                    {
-                        cookiesHostHolderPost = cookiesHostHolderPost + host;
-                    }
-                }
-                catch
-                {
-                    Console.WriteLine("获取主机域名异常，请检查SourceUrl字段的格式...");
-                }
-                gatherUrl = cookieUrl.Replace("++", "").Replace(" ", "");
-                string postData = gatherUrl.Split(new char[] { '|' }, 2)[1];
-                string url = gatherUrl.Split(new char[] { '|' }, 2)[0];
-
-                ASCIIEncoding encoding = new ASCIIEncoding();
-                byte[] data = encoding.GetBytes(postData);
-                myRequest = (HttpWebRequest)WebRequest.Create(url);
-                myRequest.Method = "Post";
-                Stream newStream = myRequest.GetRequestStream();
-                newStream.Write(data, 0, data.Length);
-                newStream.Close();
-                myRequest.AllowAutoRedirect = false;
-                myRequest.UserAgent = "Mozilla/5.0 (Windows NT 6.3; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/34.0.1847.116 Safari/537.36";
-                myRequest.ContentType = "application/x-www-form-urlencoded";
-                AddRequestHeaders(myRequest, requestHeaders);//先添加其他header并且清除已有的Cookie
-
-                HttpRequestCachePolicy noCachePolicy = new HttpRequestCachePolicy(HttpRequestCacheLevel.NoCacheNoStore);
-                myRequest.CachePolicy = noCachePolicy;
-
-                if (allCookies.Length > 0)//添加最新产生的Cookie
-                {
-                    myRequest.Headers.Add("Cookie", allCookies);
-                }
-                try
-                {
-                    myResponse = (HttpWebResponse)myRequest.GetResponse();
-                    if (myResponse.Headers["Set-Cookie"] != null)
-                    {
-                        if (Regex.IsMatch(myResponse.Headers.Get("Set-Cookie"), "path", RegexOptions.IgnoreCase))
+                        host = cookieUrl.Split(new char[] { '+' }, StringSplitOptions.RemoveEmptyEntries)[0];
+                        if (cookiesHostHolder.Contains(host))
                         {
-                            singleResponseCookie = Regex.Replace(Regex.Match(myResponse.Headers.Get("Set-Cookie"), "(.*);.*?path", RegexOptions.IgnoreCase).Value, "path", "", RegexOptions.IgnoreCase).Trim();
-                            allCookies =singleResponseCookie.Substring(0, singleResponseCookie.Length - 1);
-                        }
-                        else
-                        {
-                            singleResponseCookie = Regex.Match(myResponse.Headers.Get("Set-Cookie"), "(.*)", RegexOptions.IgnoreCase).Value.Trim();
-                            allCookies =singleResponseCookie;
+                            return null;
                         }
                     }
-                }
-                catch (Exception e)
-                {
-                    myRequest.Abort();
-                    if (myResponse != null)
+                    catch(Exception e)
                     {
-                        myResponse.Close();
+                        Console.WriteLine("获取主机域名异常，请检查SourceUrl字段的格式...");
+                        DAL.WriteLog(0, 0, 0, "", 0, false, true, e.Message, cookieUrl, DateTime.Now.ToString("yyyy-MM-dd hh:mm:ss"), DateTime.Now.ToString("yyyy-MM-dd hh:mm:ss"), 0);
+                        return null;
                     }
-                    throw new Exception("首页访问失败", e);
-                }
-                return allCookies;
-            }
-            else if (cookieUrl.StartsWith("+"))
-            {
-                //如果此主机已经获取过cookie了就直接返回
-                try
-                {
-                    string host = cookieUrl.Split(new char[] { '+' }, StringSplitOptions.RemoveEmptyEntries)[0];
-                    if (cookiesHostHolderGet.Contains(host))
-                    {
-                        return "";
-                    }
-                    else
-                    {
-                        cookiesHostHolderGet = cookiesHostHolderGet + host;
-                    }
-                }
-                catch
-                {
-                    Console.WriteLine("获取主机域名异常，请检查SourceUrl字段的格式...");
-                }
-                foreach (var item in cookieUrl.Split(new char[] { '+' }, StringSplitOptions.RemoveEmptyEntries))
-                {
 
-                    myRequest = (HttpWebRequest)WebRequest.Create(item);
-                    myRequest.Method = "GET";
-                    myRequest.AllowAutoRedirect = false;//不允许重定向
+                    gatherUrl = cookieUrl.Replace("++", "").Replace(" ", "");
+                    string postData = gatherUrl.Split(new char[] { '|' }, 2)[1];
+                    string url = gatherUrl.Split(new char[] { '|' }, 2)[0];
 
-                    if (allCookies.Length > 0)//添加最新产生的Cookie
+                    ASCIIEncoding encoding = new ASCIIEncoding();
+                    byte[] data = encoding.GetBytes(postData);
+                    myRequest = (HttpWebRequest)WebRequest.Create(url);
+                    myRequest.Method = "Post";
+                    Stream newStream = myRequest.GetRequestStream();
+                    newStream.Write(data, 0, data.Length);
+                    newStream.Close();
+                    myRequest.AllowAutoRedirect = false;
+                    myRequest.UserAgent = "Mozilla/5.0 (Windows NT 6.3; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/34.0.1847.116 Safari/537.36";
+                    myRequest.ContentType = "application/x-www-form-urlencoded";
+                    AddRequestHeaders(myRequest, requestHeaders);//先添加其他header并且清除已有的Cookie
+                    HttpRequestCachePolicy noCachePolicy = new HttpRequestCachePolicy(HttpRequestCacheLevel.NoCacheNoStore);
+                    myRequest.CachePolicy = noCachePolicy;
+                    myRequest.CookieContainer = cc;
+                    if (cookiesstr.Length > 0)//添加最新产生的Cookie
                     {
-                        myRequest.Headers.Add("Cookie", allCookies);
+                        myRequest.Headers.Add("Cookie", cookiesstr);
                     }
                     try
-                    {   
-                        myResponse = (HttpWebResponse)myRequest.GetResponse();
-                        if (myResponse.Headers["Set-Cookie"] !=null)
-                        {
-                            if ( Regex.IsMatch(myResponse.Headers.Get("Set-Cookie"),"path",RegexOptions.IgnoreCase))
-                            {
-                                singleResponseCookie = Regex.Replace(Regex.Match(myResponse.Headers.Get("Set-Cookie"), "(.*);.*?path", RegexOptions.IgnoreCase).Value,"path","",RegexOptions.IgnoreCase).Trim();
-                                if (allCookies != singleResponseCookie.Substring(0, singleResponseCookie.Length - 1))//防止同一个Cookie添加两次
-                                {
-                                    allCookies = singleResponseCookie + allCookies;
-                                    allCookies = allCookies.Substring(0, allCookies.Length - 1);
-
-                                }
-                                   
-                            }
-                            else
-                            {
-                                singleResponseCookie = Regex.Match(myResponse.Headers.Get("Set-Cookie"), "(.*)", RegexOptions.IgnoreCase).Value.Trim();
-                                if (allCookies != singleResponseCookie)//防止同一个Cookie添加两次
-                                {
-                                    allCookies = singleResponseCookie + ";" +allCookies;
-                                    allCookies = allCookies.Substring(0, allCookies.Length - 1);
-                                }
-                            }     
-                        } 
-                    }
-                    catch (Exception e)
                     {
-                        myRequest.Abort();
+                        myResponse = (HttpWebResponse)myRequest.GetResponse();
+                        cc = myRequest.CookieContainer;
+                        cookiesstr = cc.GetCookieHeader(myRequest.RequestUri);
                         if (myResponse != null)
                         {
                             myResponse.Close();
                         }
-                        throw new Exception("首页访问失败", e);
+                        if (myRequest != null)
+                        {
+                            myRequest.Abort();
+                        }
                     }
+                    catch (Exception e)
+                    {
+                        if (myResponse != null)
+                        {
+                            myResponse.Close();
+                        }
+                        if (myRequest != null)
+                        {
+                            myRequest.Abort();
+                        }
+                        DAL.WriteLog(0, 0, 0,"",0,false,true, e.Message, cookieUrl, DateTime.Now.ToString("yyyy-MM-dd hh:mm:ss"), DateTime.Now.ToString("yyyy-MM-dd hh:mm:ss"), 0);
+                        return null;
+                    }
+                    cookiesHostHolder.Add(host);
+                    return cc;
                 }
-
-                //临时加的；
-                try
+                else if (cookieUrl.StartsWith("+"))
                 {
-                    StreamReader reader = new StreamReader(myResponse.GetResponseStream(), Encoding.GetEncoding("utf-8"));//乱码需要转码
-                    string content = reader.ReadToEnd();
-                    reader.Close();
-                    string r=Regex.Match(content, "newslist01(.*?)</ul", RegexOptions.IgnoreCase).Groups[1].Value;
-                    return Regex.Match(r, @"onedet\('(.*?)'", RegexOptions.IgnoreCase).Groups[1].Value;
-                }
-                catch
-                {
+                    try
+                    {
+                        host = cookieUrl.Split(new char[] { '+' }, StringSplitOptions.RemoveEmptyEntries)[0];
+                        if (cookiesHostHolder.Contains(host))
+                        {
+                            return null;
+                        }
+                    }
+                    catch
+                    {
+                        Console.WriteLine("获取主机域名异常，请检查SourceUrl字段的格式...");
+                    }
 
+                    foreach (var item in cookieUrl.Split(new char[] { '+' }, StringSplitOptions.RemoveEmptyEntries))
+                    {
+
+                        myRequest = (HttpWebRequest)WebRequest.Create(item);
+                        myRequest.Method = "GET";
+                        myRequest.AllowAutoRedirect = false;//获取cookie不允许重定向，否则中间会丢失一个
+                        myRequest.UserAgent = "Mozilla/5.0 (Windows NT 6.3; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/34.0.1847.116 Safari/537.36";
+                        myRequest.CookieContainer = cc;
+                        if (cookiesstr.Length > 0)//添加最新产生的Cookie
+                        {
+                            myRequest.Headers.Add("Cookie", cookiesstr);
+                        }
+                        try
+                        {
+                            myResponse = (HttpWebResponse)myRequest.GetResponse();
+                            cc = myRequest.CookieContainer;
+                            cookiesstr = cc.GetCookieHeader(myRequest.RequestUri);
+                            if (myResponse != null)
+                            {
+                                myResponse.Close();
+                            }
+                            if (myRequest != null)
+                            {
+                                myRequest.Abort();
+                            }
+                        }
+                        catch (Exception e)
+                        {
+                            if (myResponse != null)
+                            {
+                                myResponse.Close();
+                            }
+                            if (myRequest != null)
+                            {
+                                myRequest.Abort();
+                            }
+                            DAL.WriteLog(0, 0, 0,"",0,false,true, e.Message, cookieUrl, DateTime.Now.ToString("yyyy-MM-dd hh:mm:ss"), DateTime.Now.ToString("yyyy-MM-dd hh:mm:ss"), 0);
+                        return null;
+                        }
+                    }
+                    cookiesHostHolder.Add(host);
+                    return cc;
                 }
-                return allCookies;
+                else
+                {
+                    return null;
+                }
             }
-            else
+            catch (Exception e)
             {
-                return "";
+                DAL.WriteLog(0, 0, 0, "", 0, false, true, e.Message, cookieUrl, DateTime.Now.ToString("yyyy-MM-dd hh:mm:ss"), DateTime.Now.ToString("yyyy-MM-dd hh:mm:ss"), 0);
+                return null;
             }
-
         }
 
         /// <summary>
@@ -1582,6 +1569,48 @@ namespace 控制台程序获取数据
                 collection[name] = value;
             }
 
+        }
+
+        /// <summary>
+        /// 将CookieContainer转换成为可以添加到RequestHeader.Cookie字符串
+        /// </summary>
+        /// <param name="cc"></param>
+        /// <returns></returns>
+        private static string CookieContainerToString(CookieContainer cc)
+        {
+            StringBuilder sbc = new StringBuilder();
+            List<Cookie> cooklist = GetAllCookies(cc);
+            foreach (Cookie cookie in cooklist)
+            {
+                //cookie后面不能加分号
+                sbc.AppendFormat($";{cookie.Name}={cookie.Value}");
+            }
+            return sbc.ToString().Substring(1);
+        }
+
+        /// <summary>
+        /// 将CookieContainer里面所有的Cookie加入到List中
+        /// </summary>
+        /// <param name="cc"></param>
+        /// <returns></returns>
+        private static List<Cookie> GetAllCookies(CookieContainer cc)
+        {
+            List<Cookie> lstCookies = new List<Cookie>();
+
+            Hashtable table = (Hashtable)cc.GetType().InvokeMember("m_domainTable",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.GetField |
+            System.Reflection.BindingFlags.Instance, null, cc, new object[] { });
+
+            foreach (object pathList in table.Values)
+            {
+                SortedList lstCookieCol = (SortedList)pathList.GetType().InvokeMember("m_list",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.GetField
+                | System.Reflection.BindingFlags.Instance, null, pathList, new object[] { });
+                foreach (CookieCollection colCookies in lstCookieCol.Values)
+                    foreach (Cookie c in colCookies) lstCookies.Add(c);
+            }
+
+            return lstCookies;
         }
 
     }

@@ -30,6 +30,8 @@ namespace 控制台程序获取数据
         static readonly string releaseConfig = ConfigurationManager.AppSettings["releaseConfig"];
         static readonly string runModel = ConfigurationManager.AppSettings["runModel"];
         static readonly int batchCount = int.Parse(ConfigurationManager.AppSettings["batchCount"]);
+        static readonly int gatherSpeed = int.Parse(ConfigurationManager.AppSettings["gatherSpeed"]);
+        static readonly bool ifDESC = bool.Parse(ConfigurationManager.AppSettings["ifDESC"]);
         static HashSet<string> cookiesHostHolder = new HashSet<string>();
 
         /// <summary>
@@ -1093,7 +1095,12 @@ namespace 控制台程序获取数据
         /// <returns></returns>
         private static string OnGetItemSourceListString()
         {
-            return @"Select *  from t_item_source_list where status=1  ";
+            if (gatherSpeed == 0)
+                return ifDESC? @"Select *  from t_item_source_list where status=1  order by id desc " : @"Select *  from t_item_source_list where status=1  ";
+            else if(gatherSpeed == 1)
+                return ifDESC ? @"Select *  from t_item_source_list a join t_gather_list_access_level_last b on a.id=b.source_id where status=1 and b.current_level=1 order by id desc  ": @"Select *  from t_item_source_list a join t_gather_list_access_level_last b on a.id=b.source_id where status=1 and b.current_level=1  ";
+            else
+                return ifDESC ? @"Select *  from t_item_source_list a join t_gather_list_access_level_last b on a.id=b.source_id where status=1 and b.current_level=2 order by id desc ": @"Select *  from t_item_source_list a join t_gather_list_access_level_last b on a.id=b.source_id where status=1 and b.current_level=1  ";
         }
 
         /// <summary>
@@ -1114,7 +1121,7 @@ namespace 控制台程序获取数据
         /// <returns></returns>
         private static string OnGetInfoPageWaitingString()
         {
-            return @"select * from t_gather_infopage_waiting where status = 0 and ins_time> cast(dateadd(dd, -7, getdate()) as date)  ";
+            return ifDESC ? @"select * from t_gather_infopage_waiting where status = 0 and ins_time> cast(dateadd(dd, -7, getdate()) as date) order by id desc  ": @"select * from t_gather_infopage_waiting where status = 0 and ins_time> cast(dateadd(dd, -7, getdate()) as date) ";
             //ValidateInput("debug", queryString);
 
         }

@@ -40,6 +40,12 @@ namespace 控制台程序获取数据
         /// <param name="args"></param>
         static void Main(string[] args)
         {
+            //string ss = test.Get("http://api.yunyang.gov.cn/yyapi.ashx?zNo=zfxxlst&url=yy.cq.gov.cn&pageindex=1&pagesize=10&zfxxrecomed=-1&zcid=F02&Key=56fa055b48ba42e320bad7fed54ccc23&date=1561535311531&callback=jQuery182003249067750851364_1561531822121&_=1561535311531"
+            //                , "utf-8", "", out _);
+
+            //string ss1 = GetData("http://api.yunyang.gov.cn/yyapi.ashx?zNo=zfxxlst&url=yy.cq.gov.cn&pageindex=1&pagesize=10&zfxxrecomed=-1&zcid=F02&Key=56fa055b48ba42e320bad7fed54ccc23&date=1561535311531&callback=jQuery182003249067750851364_1561531822121&_=1561535311531"
+            //                , "utf-8", "", out _);
+
             if (runModel == "debug")
             {
                 ExecuteDebugByID();
@@ -706,6 +712,10 @@ namespace 控制台程序获取数据
                 Thread.Sleep(5000);
                 Console.WriteLine("\t\t\t连续访问响应为空，强制休眠5秒...");
             }
+           
+            //获取JS页面计算结果，不管其算法过程，因为结果是固定的
+             gatherUrl = GetJavaScriptResult(sourceID,gatherUrl,pageNo);
+            
             //采集开始时间
             string gatherBT = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
 
@@ -861,6 +871,9 @@ namespace 控制台程序获取数据
                 case "now-yyyy-mm-dd": _result = DateTime.Now.ToString("yyyy-MM-dd"); break;
                 case "now-yyyy-mm-dd-lastmonth": _result = DateTime.Now.AddMonths(-1).ToString("yyyy-MM-dd"); break;
                 case "now-yyyy-mm-dd-tomorrow": _result = DateTime.Now.AddDays(1).ToString("yyyy-MM-dd"); break;
+                case "now-yyyy-mm-dd-ts0": _result = ConvertDateTimeToTimeStamp(DateTime.Now,0); break;
+                case "now-yyyy-mm-dd-ts3": _result = ConvertDateTimeToTimeStamp(DateTime.Now, 3); break;
+                case "now-yyyy-mm-dd-ts7": _result = ConvertDateTimeToTimeStamp(DateTime.Now, 7); break;
                 default:
                     break;
             }
@@ -994,7 +1007,7 @@ namespace 控制台程序获取数据
             }
             else if (Int64.TryParse(_publishDate, out _)) //整数时间戳的情况下，转换为符合日期的字符串
             {
-                return ConvertStringToDateTime(_publishDate).ToString("yyyy-MM-dd HH:mm:ss");
+                return ConvertTimeStampToDateTime(_publishDate).ToString("yyyy-MM-dd HH:mm:ss");
 
             }
             else
@@ -1069,6 +1082,7 @@ namespace 控制台程序获取数据
             {
                 CorrectUrl = urlpattern.Replace("$url4", url4).Replace("$url3", url3).Replace("$url2", url2).Replace("$url1", url1).Replace("$url", url);
             }
+            //链接不能替换Replace("//", "/")
             return System.Web.HttpUtility.HtmlDecode(CorrectUrl);
         }
 
@@ -1245,12 +1259,25 @@ namespace 控制台程序获取数据
         /// </summary>
         /// <param name="timeStamp"></param>
         /// <returns></returns>
-        private static DateTime ConvertStringToDateTime(string timeStamp)
+        private static DateTime ConvertTimeStampToDateTime(string timeStamp)
         {
             DateTime dtStart = TimeZone.CurrentTimeZone.ToLocalTime(new DateTime(1970, 1, 1));
             long lTime = long.Parse(Regex.Replace(timeStamp, @"\s", "") + "0000");
             TimeSpan toNow = new TimeSpan(lTime);
             return dtStart.Add(toNow);
+        }
+
+        /// <summary>
+        /// 将日期转换为N为小数的时间戳
+        /// </summary>
+        /// <param name="time"></param>
+        /// <param name="scale"></param>
+        /// <returns></returns>
+        private static string ConvertDateTimeToTimeStamp(DateTime time,int scale=0)
+        {
+            TimeSpan cha = (time - TimeZone.CurrentTimeZone.ToLocalTime(new DateTime(1970,1,1)));
+            double t = (double)cha.TotalSeconds;
+            return ((long)(Math.Round(t, scale) * Math.Pow(10,scale) )).ToString();
         }
 
         /// <summary>
@@ -1620,5 +1647,27 @@ namespace 控制台程序获取数据
             return lstCookies;
         }
 
+        private static string GetJavaScriptResult(int sourceId,string url, int pageno )
+        {
+            if (sourceId==305)
+            {
+                switch (pageno)
+                {   
+                    case 1: url=url.Replace("$js", "56fa055b48ba42e320bad7fed54ccc23"); break;
+                    case 2: url = url.Replace("$js", "6b79cbac4c0f9cc3a8dc62290eb96274"); break;
+                    case 3: url = url.Replace("$js", "48ccbf74bf755213f942623554c3e3a9"); break;
+                    case 4: url = url.Replace("$js", "6343da676f1d1659e32dab239571d2cd"); break;
+                    case 5: url = url.Replace("$js", "09b206b85700b84c180eb36a15f6390c"); break;
+                    case 6: url = url.Replace("$js", "c13faab34605c3c1a94d7b311cf16cc7"); break;
+                    case 7: url = url.Replace("$js", "a33c9f16084ec87b69af371a38db5ddb"); break;
+                    case 8: url = url.Replace("$js", "36c53bc708ec3bd9a4d7d10a1136a735"); break;
+                    case 9: url = url.Replace("$js", "8866e6a67ea822b1543142c9c03237fb"); break;
+                    case 10: url = url.Replace("$js", "2bfc7a8f88d05e7cfb51da395716d5ac"); break;
+                    default:
+                        break;
+                }
+            }
+            return url;
+        }
     }
 }

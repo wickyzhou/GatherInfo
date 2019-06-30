@@ -27,5 +27,9 @@ namespace 控制台程序获取数据
             //System.Console.WriteLine("Warning, trust any certificate");
             return true;
         }
+
+
+      
+
     }
 }

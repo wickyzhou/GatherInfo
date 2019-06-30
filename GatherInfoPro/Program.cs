@@ -21,6 +21,8 @@ using System.Reflection;
 using System.Collections.Specialized;
 using System.Collections;
 using System.Security.Cryptography;
+using System.IO.Compression;
+using System.Globalization;
 
 namespace 控制台程序获取数据
 {
@@ -33,6 +35,7 @@ namespace 控制台程序获取数据
         static readonly int gatherSpeed = int.Parse(ConfigurationManager.AppSettings["gatherSpeed"]);
         static readonly bool ifDESC = bool.Parse(ConfigurationManager.AppSettings["ifDESC"]);
         static HashSet<string> cookiesHostHolder = new HashSet<string>();
+        static string viewStateString = string.Empty;
 
         /// <summary>
         /// 程序主函数：程序开始到程序结束
@@ -40,11 +43,9 @@ namespace 控制台程序获取数据
         /// <param name="args"></param>
         static void Main(string[] args)
         {
-            //string ss = test.Get("http://api.yunyang.gov.cn/yyapi.ashx?zNo=zfxxlst&url=yy.cq.gov.cn&pageindex=1&pagesize=10&zfxxrecomed=-1&zcid=F02&Key=56fa055b48ba42e320bad7fed54ccc23&date=1561535311531&callback=jQuery182003249067750851364_1561531822121&_=1561535311531"
-            //                , "utf-8", "", out _);
 
-            //string ss1 = GetData("http://api.yunyang.gov.cn/yyapi.ashx?zNo=zfxxlst&url=yy.cq.gov.cn&pageindex=1&pagesize=10&zfxxrecomed=-1&zcid=F02&Key=56fa055b48ba42e320bad7fed54ccc23&date=1561535311531&callback=jQuery182003249067750851364_1561531822121&_=1561535311531"
-            //                , "utf-8", "", out _);
+            //string a = HttpUtility.UrlDecode("%E6%96%A5%E5%A4%B1%E7%99%BD%E7%93%9C");
+            //string b = HttpUtility.UrlEncode("手他句仪");
 
             if (runModel == "debug")
             {
@@ -203,10 +204,12 @@ namespace 控制台程序获取数据
                     string infoParamsFields = ds.Tables[i].Rows[j]["info_params_fields"].ToString();
                     string listRequestHeaders = ds.Tables[i].Rows[j]["list_request_headers"].ToString();
                     string infoRequestHeaders = ds.Tables[i].Rows[j]["info_request_headers"].ToString();
+                    string viewStateUrl= ds.Tables[i].Columns.Contains("viewstate_url")? ds.Tables[i].Rows[j]["viewstate_url"].ToString():"";
+                    int delayMS = (int)ds.Tables[i].Rows[j]["delay_ms"];
                     #endregion
                     //每次都要根据正则来重建DT
                     dtList = CreateDatatableList(listPattern);
-                    GatherList(dtList, sourceID, listOpcID, provinceID, classID, sourceUrl, keyword, seqNo, url, infoURL, urlPattern, listBegin, listEnd, firstPageRatio, firstPage, gatherPages, totalPages, isGatherAllPages, isGenericGatherUrl, listPattern, listCharset, listIsPost, infoPattern, infoCharset, infoRequestHeader, infoOpcID, gatherType, infoFixedFields, infoVarFields, infoParamsFields, listRequestHeaders);
+                    GatherList(dtList, delayMS, viewStateUrl, sourceID, listOpcID, provinceID, classID, sourceUrl, keyword, seqNo, url, infoURL, urlPattern, listBegin, listEnd, firstPageRatio, firstPage, gatherPages, totalPages, isGatherAllPages, isGenericGatherUrl, listPattern, listCharset, listIsPost, infoPattern, infoCharset, infoRequestHeader, infoOpcID, gatherType, infoFixedFields, infoVarFields, infoParamsFields, listRequestHeaders);
                    
                     //0:仅列表采集  1：采集信息到Waiting信息表（通过改变配置 "release"=>releaseConfig="120" 或"debug"=> 输入待采信息ID 执行采集）  2：采集完列表后立即采集信息
                     if (gatherType == 2 && keywords.Split('|').Length == seqNo)
@@ -304,17 +307,22 @@ namespace 控制台程序获取数据
         /// <param name="infoFixedFields"></param>
         /// <param name="infoVarFields"></param>
         /// <param name="infoParamsFields"></param>
-        private static void GatherList(DataTable dt, int sourceID, int listOpcID, int provinceID, int classID, string sourceUrl, string keyword, int seqNo, string gatherUrl, string infoUrl, string urlPattern, string listBegin, string listEnd, int firstPageRatio, int firstPage, int gatherPages, int totalPages, bool isGatherAllPages, bool isGenericGatherUrl, string listPattern, string listCharset, bool listIsPost, string infoPattern, string infoCharset, string infoRequestHeader, int infoOpcID, int gatherType, string infoFixedFields, string infoVarFields, string infoParamsFields, string listRequestHeaders)
+        private static void GatherList(DataTable dt,int delayMS,string viewStateUrl, int sourceID, int listOpcID, int provinceID, int classID, string sourceUrl, string keyword, int seqNo, string gatherUrl, string infoUrl, string urlPattern, string listBegin, string listEnd, int firstPageRatio, int firstPage, int gatherPages, int totalPages, bool isGatherAllPages, bool isGenericGatherUrl, string listPattern, string listCharset, bool listIsPost, string infoPattern, string infoCharset, string infoRequestHeader, int infoOpcID, int gatherType, string infoFixedFields, string infoVarFields, string infoParamsFields, string listRequestHeaders)
         {
             //获取整个采集源的cookie以及动态参数？？？暂时不用
             CookieContainer cookie = new CookieContainer();
             cookie = GetCookieBySourceUrl(sourceUrl, listRequestHeaders);
 
+            if (viewStateUrl.Length > 0)     //viewStateString = GetViewStateBySourceUrl(viewStateUrl, listCharset, listRequestHeaders, out _, cookie);
+                GetListOnly(dt, delayMS, true, cookie, classID, listOpcID, provinceID, sourceID, seqNo, keyword, viewStateUrl, listIsPost, listCharset, listPattern, firstPage - 1, infoUrl, urlPattern, listBegin, listEnd, infoPattern, infoCharset, infoRequestHeader, infoOpcID, gatherType, infoFixedFields, infoVarFields, infoParamsFields, listRequestHeaders);
+            else
+                viewStateString = "";
+
             //不是通用的采集网址，先首页采集
             if (!isGenericGatherUrl)
             {
                 Console.WriteLine("sourceID: " + sourceID.ToString() + "\t\t pages:-1" + "\t\t 关键字:" + seqNo.ToString() + " - " + UrlDecode(keyword, Encoding.GetEncoding(listCharset)) + "\n\r\t\t" + gatherUrl);
-                GetListOnly(dt, cookie, classID, listOpcID, provinceID, sourceID, seqNo, keyword, sourceUrl, listIsPost, listCharset, listPattern, firstPage - 1, infoUrl, urlPattern, listBegin, listEnd, infoPattern, infoCharset, infoRequestHeader, infoOpcID, gatherType, infoFixedFields, infoVarFields, infoParamsFields, listRequestHeaders);
+                GetListOnly(dt, delayMS, false, cookie, classID, listOpcID, provinceID, sourceID, seqNo, keyword, sourceUrl, listIsPost, listCharset, listPattern, firstPage - 1, infoUrl, urlPattern, listBegin, listEnd, infoPattern, infoCharset, infoRequestHeader, infoOpcID, gatherType, infoFixedFields, infoVarFields, infoParamsFields, listRequestHeaders);
             }
 
 
@@ -323,7 +331,7 @@ namespace 控制台程序获取数据
                 for (int m = firstPage; m <= totalPages; m++)
                 {
                     Console.WriteLine("source_id: " + sourceID.ToString() + "\t\t pages:" + m.ToString() + "\t\t 关键字:" + seqNo.ToString() + " - " + UrlDecode(keyword, Encoding.GetEncoding(listCharset)) + "\n\r\t\t" + gatherUrl.Replace("$pageno", m.ToString()));
-                    GetListOnly(dt, cookie, classID, listOpcID, provinceID, sourceID, seqNo, keyword, gatherUrl.Replace("$pageno", firstPage.ToString()), listIsPost, listCharset, listPattern, m, infoUrl, urlPattern, listBegin, listEnd, infoPattern, infoCharset, infoRequestHeader, infoOpcID, gatherType, infoFixedFields, infoVarFields, infoParamsFields, listRequestHeaders);
+                    GetListOnly(dt, delayMS, false, cookie, classID, listOpcID, provinceID, sourceID, seqNo, keyword, gatherUrl.Replace("$pageno", firstPage.ToString()), listIsPost, listCharset, listPattern, m, infoUrl, urlPattern, listBegin, listEnd, infoPattern, infoCharset, infoRequestHeader, infoOpcID, gatherType, infoFixedFields, infoVarFields, infoParamsFields, listRequestHeaders);
                 }
 
             }
@@ -333,7 +341,7 @@ namespace 控制台程序获取数据
                 for (int m = firstPage; m < firstPage + gatherPages; m += firstPageRatio)
                 {
                     Console.WriteLine("sourceID: " + sourceID.ToString() + "\t\t pages:" + m.ToString() + "\t\t 关键字:" + seqNo.ToString() + " - " + UrlDecode(keyword, Encoding.GetEncoding(listCharset)) + "\n\r\t\t" + gatherUrl.Replace("$pageno", m.ToString()));
-                    GetListOnly(dt, cookie, classID, listOpcID, provinceID, sourceID, seqNo, keyword, gatherUrl.Replace("$pageno", m.ToString()), listIsPost, listCharset, listPattern, m, infoUrl, urlPattern, listBegin, listEnd, infoPattern, infoCharset, infoRequestHeader, infoOpcID, gatherType, infoFixedFields, infoVarFields, infoParamsFields, listRequestHeaders);
+                    GetListOnly(dt, delayMS, false, cookie, classID, listOpcID, provinceID, sourceID, seqNo, keyword, gatherUrl.Replace("$pageno1", (m-1).ToString()).Replace("$pageno", m.ToString()), listIsPost, listCharset, listPattern, m, infoUrl, urlPattern, listBegin, listEnd, infoPattern, infoCharset, infoRequestHeader, infoOpcID, gatherType, infoFixedFields, infoVarFields, infoParamsFields, listRequestHeaders);
                 }
 
             }
@@ -483,13 +491,18 @@ namespace 控制台程序获取数据
         /// <returns></returns>
         private static string PostData(string gatherUrl, string charset, string requestHeaders, out bool isException, CookieContainer newCookie = null)
         {
-            HttpWebRequest myRequest=null;
-            HttpWebResponse myResponse = null;
+            HttpWebRequest myRequest = null; HttpWebResponse myResponse = null; StreamReader reader = null;
+            string content = string.Empty;
             try
             {
                 //CookieContainer cc = new CookieContainer();
                 //数据库网址URL以？号分割, POSTformdata里面也有|，因此不能用split,用最多拆分成2部分的重载
+
                 string postData = gatherUrl.Split(new char[] { '|' }, 2)[1];
+
+                if (viewStateString.Length > 0)
+                    postData = postData.Replace("$vs",viewStateString).Replace("$Pager", "%24Pager");
+                
                 string url = gatherUrl.Split(new char[] { '|' }, 2)[0];
 
                 ASCIIEncoding encoding = new ASCIIEncoding();
@@ -498,7 +511,7 @@ namespace 控制台程序获取数据
 
                 System.GC.Collect();//避免GetRequestStream()超时
                 myRequest = (HttpWebRequest)WebRequest.Create(url);
-                myRequest.Timeout = 20000;
+                myRequest.Timeout = 60000;
                 myRequest.Method = "POST";
                 //强制取消缓存，同浏览器Disable Cache
                 HttpRequestCachePolicy noCachePolicy = new HttpRequestCachePolicy(HttpRequestCacheLevel.NoCacheNoStore);
@@ -534,9 +547,26 @@ namespace 控制台程序获取数据
                 try
                 {
                     myResponse = (HttpWebResponse)myRequest.GetResponse();
-                    StreamReader reader = new StreamReader(myResponse.GetResponseStream(), Encoding.GetEncoding(charset));//乱码需要转码
-                    string content = reader.ReadToEnd();
-                    reader.Close();
+                    if (myResponse.StatusCode == HttpStatusCode.OK && myResponse.ContentLength < 1024 * 1024)
+                    {
+                        if (myResponse.ContentEncoding != null && myResponse.ContentEncoding.Equals("gzip", StringComparison.InvariantCultureIgnoreCase))
+                            reader = new StreamReader(new GZipStream(myResponse.GetResponseStream(), CompressionMode.Decompress), Encoding.GetEncoding(charset));
+                        else
+                            reader = new StreamReader(myResponse.GetResponseStream(), Encoding.GetEncoding(charset));
+                        
+                        content = reader.ReadToEnd();
+                        reader.Close();
+                        isException = false;
+
+                        //获取响应__VIEWSTATE
+                        if(viewStateString.Length>0)
+                        viewStateString = GetViewStateParametersStringFormmater(content);
+                    }
+                    else
+                    {
+                        isException = true;
+                        content = "访问状态不是200，请检查是否有重定向等其余状态";
+                    }
 
                     //避免超时
                     if (myResponse != null)
@@ -593,20 +623,21 @@ namespace 控制台程序获取数据
         /// <param name="charset"></param>
         /// <param name="isException"></param>
         /// <returns></returns>
-        private static string GetData(string url, string charset, string requestHeaders, out bool isException, CookieContainer newCookie = null)
+        private static string GetData(string url, string charset, string requestHeaders, out bool isException, CookieContainer newCookie = null,string _viewStateString="")
         {
-            HttpWebRequest myRequest = null; HttpWebResponse myResponse = null;
+            HttpWebRequest myRequest = null; HttpWebResponse myResponse = null; StreamReader reader = null;
+            string content = string.Empty;
             try
             {
                 Util.SetCertificatePolicy();//验证安全，未能为 SSL/TLS 安全通道建立信任关系
                 System.GC.Collect();//避免GetRequestStream()超时
                 myRequest = (HttpWebRequest)WebRequest.Create(url);
-                myRequest.Timeout = 20000;
+                myRequest.Timeout = 60000;
                 myRequest.Method = "GET";
                 //强制取消缓存，同浏览器Disable Cache
                 HttpRequestCachePolicy noCachePolicy = new HttpRequestCachePolicy(HttpRequestCacheLevel.NoCacheNoStore);
                 myRequest.CachePolicy = noCachePolicy;
-                myRequest.KeepAlive = false;//基础连接已经关闭: 服务器关闭了本应保持活动状态的连接。
+              
                 //myRequest.ServicePoint.Expect100Continue = false;//卡主不动无法提交Post才需要
                 //myRequest.AllowAutoRedirect = true; 已经用了CookieContainer
                 myRequest.CookieContainer = newCookie ?? new CookieContainer();
@@ -618,9 +649,14 @@ namespace 控制台程序获取数据
                 {
                     myRequest.UserAgent = "Mozilla/5.0 (Windows NT 6.3; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/34.0.1847.116 Safari/537.36";
                 }
+                //如果没有填写头部连接属性则默认关闭
+                if (myRequest.Headers["Connection"] == null)
+                {
+                    myRequest.KeepAlive = false;//基础连接已经关闭: 服务器关闭了本应保持活动状态的连接。
+                }
 
                 if (newCookie != null && newCookie.Count > 0)
-                {
+                {   
                     myRequest.Headers.Add("Cookie", CookieContainerToString(newCookie));
                 }
 
@@ -628,10 +664,29 @@ namespace 控制台程序获取数据
                 try
                 {
                     myResponse = (HttpWebResponse)myRequest.GetResponse();
-                    StreamReader reader = new StreamReader(myResponse.GetResponseStream(), Encoding.GetEncoding(charset));
-                    string content = reader.ReadToEnd();
-                    reader.Close();
-                    isException = false;
+                    if (myResponse.StatusCode == HttpStatusCode.OK && myResponse.ContentLength < 1024 * 1024)
+                    {
+                        if (myResponse.ContentEncoding != null && myResponse.ContentEncoding.Equals("gzip", StringComparison.InvariantCultureIgnoreCase))
+                            reader = new StreamReader(new GZipStream(myResponse.GetResponseStream(), CompressionMode.Decompress), Encoding.GetEncoding(charset));
+                        else
+                            reader = new StreamReader(myResponse.GetResponseStream(), Encoding.GetEncoding(charset));
+
+                        content = reader.ReadToEnd();
+                        reader.Close();
+                        isException = false;
+
+                        //获取响应__VIEWSTATE
+                        if (_viewStateString.Length > 0)
+                            viewStateString = GetViewStateParametersStringFormmater(content);
+                    }
+                    else
+                    {
+                        isException = true;
+                        content = "访问状态不是200，请检查是否有重定向等其余状态";
+                    }
+                    
+                
+                    
                     if (myResponse != null)
                     {
                         myResponse.Close();
@@ -702,17 +757,17 @@ namespace 控制台程序获取数据
         /// <param name="listBegin"></param>
         /// <param name="listEnd"></param>
         /// <returns></returns>
-        private static DataTable GetListOnly(DataTable dt, CookieContainer cookie, int classID, int listOpcID, int provinceID, int sourceID, int seqNo, string keyword, string gatherUrl, bool listIsPost, string listCharset, string listPattern, int pageNo, string infoUrl, string urlPattern, string listBegin, string listEnd, string infoPattern, string infoCharset, string infoRequestHeader, int infoOpcID, int gatherType, string infoFixedFields, string infoVarFields, string infoParamsFields, string listRequestHeaders)
+        private static DataTable GetListOnly(DataTable dt,int delayMS,bool isViewState , CookieContainer cookie, int classID, int listOpcID, int provinceID, int sourceID, int seqNo, string keyword, string gatherUrl, bool listIsPost, string listCharset, string listPattern, int pageNo, string infoUrl, string urlPattern, string listBegin, string listEnd, string infoPattern, string infoCharset, string infoRequestHeader, int infoOpcID, int gatherType, string infoFixedFields, string infoVarFields, string infoParamsFields, string listRequestHeaders)
         {
 
             #region 1.采集过程
             //直接获取会没有响应，先睡个5秒钟
-            if (sourceID == 100053)
+            if (delayMS>0)
             {
-                Thread.Sleep(5000);
-                Console.WriteLine("\t\t\t连续访问响应为空，强制休眠5秒...");
+                Thread.Sleep(delayMS);
+                Console.WriteLine($"\t\t\t列表参数设定，强制休眠{delayMS}毫秒...");
             }
-           
+         
             //获取JS页面计算结果，不管其算法过程，因为结果是固定的
              gatherUrl = GetJavaScriptResult(sourceID,gatherUrl,pageNo);
             
@@ -724,16 +779,17 @@ namespace 控制台程序获取数据
             string response = string.Empty;//获取响应内容或者异常信息
             int gatherRows = 0;//正则匹配到的条数基本等于每个列表页面的链接数
             string url = string.Empty, url1 = string.Empty, url2 = string.Empty, url3 = string.Empty, url4 = string.Empty, pd = string.Empty;//构成infoUrl的6个参数，替代数据库里面的$!,$2...
-            if (listIsPost)
-            {
+
+            if(isViewState)
+                response = GetData(gatherUrl, listCharset, listRequestHeaders, out isException, cookie,"使用GET获取VIEWSTATE");
+            else if (listIsPost)
                 response = PostData(gatherUrl, listCharset, listRequestHeaders, out isException, cookie);
-            }
             else
             {
                 //下列采集列表只能使用精简版的GET（具体原因没有去研究）
                 if (sourceID == 52 || sourceID == 53 || sourceID == 33)
                 {
-                    response = test.Get(gatherUrl, listCharset, listRequestHeaders, out isException);
+                    response = test.Get(gatherUrl, listCharset, listRequestHeaders, out isException, cookie);
                 }
                 else
                 {
@@ -905,7 +961,8 @@ namespace 控制台程序获取数据
         private static string DealwithResponse(string content)
         {
             string result = null;
-            content = content.Replace(@"\t", "").Replace(@"\n", "").Replace(@"\r", "").Replace("\t", "").Replace("\r", "").Replace("\n", "").Replace("&nbsp;", "");
+            //.Replace("&nbsp;", "")不能替换掉空格，否则时间可能异常
+            content = content.Replace(@"\t", "").Replace(@"\n", "").Replace(@"\r", "").Replace("\t", "").Replace("\r", "").Replace("\n", "");
 
             //将内容中的脚本去除
             content = Regex.Replace(Regex.Replace(Regex.Replace(Regex.Replace(Regex.Replace(content
@@ -961,7 +1018,7 @@ namespace 控制台程序获取数据
         {
             //string result = Regex.Replace(Regex.Replace(Regex.Replace(Regex.Replace(Regex.Replace(title.ToLower(), "<font.*?>", ""), "</font.*?>", ""), " ", ""), "<span.*?>", ""), "</span.*?>", "");
 
-            string result = DealWithBlank(Regex.Replace(title, "</?[a-z].*?>", "", RegexOptions.IgnoreCase));
+            string result = DealWithBlank(Regex.Replace(title, "</?[a-z].*?>", "", RegexOptions.IgnoreCase).Replace("&nbsp;", ""));
             if (result.Length > 200)
             {
                 return result.Substring(0, 200);//限制在200个字符以内
@@ -995,7 +1052,7 @@ namespace 控制台程序获取数据
             string _publishDate = Regex.Replace(Regex.Replace(publishDate, "<a.*?</a>", "", RegexOptions.IgnoreCase), "<.*?>", "")
                                         .Replace("年", "-").Replace("月", "-").Replace("日", "")
                                          .Replace("[", "").Replace("]", "").Replace("【", "").Replace("】", "")
-                                         .Replace("（", "").Replace("(", "").Replace("）", "").Replace(")", "");
+                                         .Replace("（", "").Replace("(", "").Replace("）", "").Replace(")", "").Replace("&nbsp;", " ");
             DateTime _result;
             if (_publishDate.Length == 0) //如果为空，则设置为明天
             {
@@ -1012,7 +1069,7 @@ namespace 控制台程序获取数据
             }
             else
             {
-                if (url.Contains("www.ccgp-sichuan.gov.cn"))//特殊格式的日期，处理为正常值
+                if (url.StartsWith("http://www.ccgp-sichuan.gov.cn"))//特殊格式的日期，处理为正常值
                 {
                     try
                     {
@@ -1024,8 +1081,13 @@ namespace 控制台程序获取数据
                         return DateTime.Now.AddMonths(1).ToString("yyyy-MM-dd");
                     }
                 }
+                else if(url.StartsWith("http://www.ccgp-tianjin.gov.cn"))
+                    {
+                    return DateTime.ParseExact(_publishDate, "ddd MMM dd HH:mm:ss CST yyyy", new CultureInfo("en-us")).ToString("yyyy-MM-dd");
+                }
                 else//采集发布时间格式有问题，设置为后天
                 {
+                  
                     return DateTime.Now.AddDays(2).ToString("yyyy-MM-dd");
                 }
 
@@ -1114,7 +1176,7 @@ namespace 控制台程序获取数据
             else if(gatherSpeed == 1)
                 return ifDESC ? @"Select *  from t_item_source_list a join t_gather_list_access_level_last b on a.id=b.source_id where status=1 and b.current_level=1 order by id desc  ": @"Select *  from t_item_source_list a join t_gather_list_access_level_last b on a.id=b.source_id where status=1 and b.current_level=1  ";
             else
-                return ifDESC ? @"Select *  from t_item_source_list a join t_gather_list_access_level_last b on a.id=b.source_id where status=1 and b.current_level=2 order by id desc ": @"Select *  from t_item_source_list a join t_gather_list_access_level_last b on a.id=b.source_id where status=1 and b.current_level=1  ";
+                return ifDESC ? @"Select *  from t_item_source_list a join t_gather_list_access_level_last b on a.id=b.source_id where status=1 and b.current_level=2 order by id desc ": @"Select *  from t_item_source_list a join t_gather_list_access_level_last b on a.id=b.source_id where status=1 and b.current_level=2  ";
         }
 
         /// <summary>
@@ -1569,14 +1631,14 @@ namespace 控制台程序获取数据
                     {
                         SetHeaderValue(request.Headers, item.Split(new char[] { ':', '：' }, 2)[0], item.Split(new char[] { ':', '：' }, 2)[1]);
                     }
-                    if (request.Headers["Cookie"] != null)
-                    {
-                        request.Headers.Remove("Cookie");
-                    }
-                    if (request.Headers["Connection"] != null)
-                    {
-                        request.Connection = null;
-                    }
+                    //if (request.Headers["Cookie"] != null)
+                    //{
+                    //    request.Headers.Remove("Cookie");
+                    //}
+                    //if (request.Headers["Connection"] != null)
+                    //{
+                    //    request.Connection = null;
+                    //}
                 }
             }
             catch (Exception e)
@@ -1647,6 +1709,13 @@ namespace 控制台程序获取数据
             return lstCookies;
         }
 
+        /// <summary>
+        /// 获取页面参数==固定JS算法结果
+        /// </summary>
+        /// <param name="sourceId"></param>
+        /// <param name="url"></param>
+        /// <param name="pageno"></param>
+        /// <returns></returns>
         private static string GetJavaScriptResult(int sourceId,string url, int pageno )
         {
             if (sourceId==305)
@@ -1669,5 +1738,22 @@ namespace 控制台程序获取数据
             }
             return url;
         }
+
+        /// <summary>
+        /// 获取页面的__VIEWSTATE，__VIEWSTATEGENERATOR，__VIEWSTATEENCRYPTED相关的参数
+        /// </summary>
+        /// <param name="response"></param>
+        /// <returns></returns>
+        private static string GetViewStateParametersStringFormmater(string response)
+        {
+            return "__VIEWSTATE=" + HttpUtility.UrlEncode(Regex.Match(response, "id=\"__VIEWSTATE\"[^\"]*\"([^\"]*)").Groups[1].Value)
+            //+"&__EVENTVALIDATION=" + Regex.Match(response, "id=\"__EVENTVALIDATION\"[^\"]*\"([^\"]*)").Groups[1].Value
+            + "&__VIEWSTATEGENERATOR=" + Regex.Match(response, "id=\"__VIEWSTATEGENERATOR\"[^\"]*\"([^\"]*)").Groups[1].Value
+            + "&__VIEWSTATEENCRYPTED=" + Regex.Match(response, "id=\"__VIEWSTATEENCRYPTED\"[^\"]*\"([^\"]*)").Groups[1].Value
+            // +"&__EVENTTARGET=" + Regex.Match(response, "id=\"__EVENTTARGET\"[^\"]*\"([^\"]*)").Groups[1].Value
+            //+ "&__EVENTARGUMENT=" + Regex.Match(response, "id=\"__EVENTARGUMENT\"[^\"]*\"([^\"]*)").Groups[1].Value
+            ;   
+        }
     }
+
 }

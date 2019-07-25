@@ -1,7 +1,7 @@
 ﻿
 namespace 控制台程序获取数据
 {
-    class laji
+    class Laji
     {/*
         private  string CookieContainerToString(CookieContainer cc)
         {

@@ -160,14 +160,15 @@ namespace 控制台程序获取数据
                     cmd.CommandText = "pr_if_url_exsits";
                     cmd.CommandType = CommandType.StoredProcedure;
 
-                    SqlParameter sp1 = new SqlParameter("@url", SqlDbType.NVarChar, -1);
-                    sp1.Direction = ParameterDirection.Input;
-                    sp1.Value = url;
-
-                    SqlParameter sp2 = new SqlParameter("@return", SqlDbType.Bit);
-                    sp2.Direction = ParameterDirection.ReturnValue;
-
-
+                    SqlParameter sp1 = new SqlParameter("@url", SqlDbType.NVarChar, -1)
+                    {
+                        Direction = ParameterDirection.Input,
+                        Value = url
+                    };
+                    SqlParameter sp2 = new SqlParameter("@return", SqlDbType.Bit)
+                    {
+                        Direction = ParameterDirection.ReturnValue
+                    };
                     cmd.Parameters.Add(sp1);
                     cmd.Parameters.Add(sp2);
                     cmd.ExecuteNonQuery();
